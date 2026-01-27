@@ -9,6 +9,9 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+# ======================================================================
+# Enumerations
+# ======================================================================
 class PaperSource(str, Enum):
     PUBMED = "pubmed"
     BIORXIV = "biorxiv"
@@ -17,6 +20,17 @@ class PaperSource(str, Enum):
     MANUAL = "manual"
 
 
+class EpistemicTag(str, Enum):
+    """Classification for separating evidence, inference, and speculation."""
+
+    EVIDENCE = "evidence"
+    INFERENCE = "inference"
+    SPECULATION = "speculation"
+
+
+# ======================================================================
+# Paper models
+# ======================================================================
 class Paper(BaseModel):
     """Represents a single research paper with full metadata."""
 
@@ -89,6 +103,9 @@ class TextChunk(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+# ======================================================================
+# Query and response models
+# ======================================================================
 class QueryResult(BaseModel):
     """A single retrieval result with source attribution."""
 
@@ -108,6 +125,62 @@ class QueryResult(BaseModel):
         return f"[{author_str}. \"{self.paper_title}\"{doi_part}]"
 
 
+class StructuredVariable(BaseModel):
+    """A variable extracted from source material during the discovery loop."""
+
+    name: str
+    value: str = ""
+    unit: str = ""
+    context: str = ""
+    source_ref: str = ""
+
+
+class Hypothesis(BaseModel):
+    """A testable hypothesis generated from pattern comparison."""
+
+    statement: str
+    supporting_refs: list[str] = Field(default_factory=list)
+    confidence: str = "low"  # low, medium, high — based on evidence density
+    validation_strategy: str = ""
+
+
+class DiscoveryResult(BaseModel):
+    """Structured output from the discovery loop.
+
+    Separates evidence (from sources), inference (logical derivation),
+    and speculation (hypotheses beyond direct evidence).
+    """
+
+    query: str
+    evidence: list[str] = Field(
+        default_factory=list,
+        description="Statements directly supported by retrieved sources",
+    )
+    inference: list[str] = Field(
+        default_factory=list,
+        description="Logical derivations from the evidence",
+    )
+    speculation: list[str] = Field(
+        default_factory=list,
+        description="Hypotheses that go beyond what the evidence directly states",
+    )
+    variables: list[StructuredVariable] = Field(
+        default_factory=list,
+        description="Structured variables extracted from sources",
+    )
+    hypotheses: list[Hypothesis] = Field(
+        default_factory=list,
+        description="Testable hypotheses generated from pattern comparison",
+    )
+    sources: list[QueryResult] = Field(default_factory=list)
+    model_used: str = ""
+    total_chunks_searched: int = 0
+    uncertainty_notes: list[str] = Field(
+        default_factory=list,
+        description="Explicit declarations of uncertainty or missing data",
+    )
+
+
 class RAGResponse(BaseModel):
     """Complete response from the RAG pipeline."""
 
@@ -116,6 +189,10 @@ class RAGResponse(BaseModel):
     sources: list[QueryResult] = Field(default_factory=list)
     model_used: str = ""
     total_chunks_searched: int = 0
+    # Optional structured layers — populated when discovery mode is used
+    evidence_statements: list[str] = Field(default_factory=list)
+    inference_statements: list[str] = Field(default_factory=list)
+    speculation_statements: list[str] = Field(default_factory=list)
 
     def format_full(self) -> str:
         """Format the response with inline citations for display."""
@@ -128,6 +205,23 @@ class RAGResponse(BaseModel):
             seen.add(key)
             lines.append(f"  [{i}] {src.format_citation()}")
         return "\n".join(lines)
+
+
+# ======================================================================
+# Experiment ledger
+# ======================================================================
+class LedgerEntry(BaseModel):
+    """A single entry in the experiment ledger."""
+
+    entry_id: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    query: str
+    evidence_summary: str = ""
+    hypotheses: list[Hypothesis] = Field(default_factory=list)
+    variables: list[StructuredVariable] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list)
+    notes: str = ""
+    tags: list[str] = Field(default_factory=list)
 
 
 # Forward-reference resolution

@@ -1,52 +1,114 @@
-"""Core RAG pipeline: retrieve → rerank → generate with citations."""
+"""Core RAG pipeline: retrieve → rerank → generate with citations.
+
+Implements the three-layer research architecture:
+  Layer 1 — Library: immutable source material, never hallucinated
+  Layer 2 — Index: semantic retrieval, structured fact extraction
+  Layer 3 — Compute: analysis, pattern comparison, hypothesis generation
+
+Discovery loop: retrieve → extract variables → compare patterns →
+  generate hypotheses → propose validation → log to ledger
+"""
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from openai import OpenAI
 
 from acheron.config import get_settings
-from acheron.models import QueryResult, RAGResponse
+from acheron.models import (
+    DiscoveryResult,
+    Hypothesis,
+    QueryResult,
+    RAGResponse,
+    StructuredVariable,
+)
 from acheron.vectorstore.store import VectorStore
 
 logger = logging.getLogger(__name__)
 
+# ======================================================================
+# System prompts — Nexus identity
+# ======================================================================
 SYSTEM_PROMPT = """\
-You are Acheron Nexus, a specialist research assistant for bioelectricity, \
-biomedical engineering, EEG analysis, regenerative biology, ion channel dynamics, \
-and bioelectric morphogenesis.
+You are Nexus, the bioelectric research intelligence for the Acheron project.
 
-Your role:
-1. Answer questions using ONLY the provided source passages.
-2. Cite every claim using [1], [2], etc. matching the source numbers.
-3. If the sources don't contain enough information, say so explicitly.
-4. Prefer precise technical language appropriate for a researcher.
-5. When discussing experimental results, note the methodology and any limitations.
-6. For conflicting findings across sources, present both perspectives with citations.
+Purpose: assist in bioelectrical and biomedical discovery. Not clinical diagnosis.
 
-Do NOT:
-- Make up information not in the sources.
-- Cite sources that don't support your statement.
-- Speculate beyond what the literature states.
-"""
+Architecture — three layers:
+
+Layer 1 (Library): The source passages below are immutable primary sources. \
+Never hallucinate facts. Always cite source numbers [1], [2], etc.
+
+Layer 2 (Index): You are performing retrieval-augmented reasoning. \
+Do not claim knowledge that is not present in the retrieved sources.
+
+Layer 3 (Compute): Apply reasoning only when required — comparative analysis, \
+statistical reasoning, pattern detection. Assume compute is scarce.
+
+Output rules:
+- Structured, stepwise output.
+- No motivational language. No generic explanations.
+- Separate EVIDENCE (directly from sources), INFERENCE (logical derivation), \
+and SPECULATION (hypotheses beyond evidence) using labeled sections.
+- Be explicit about uncertainty.
+- Cite source numbers [1], [2], etc. for every factual claim.
+- You are a research engine, not a chatbot.
+
+Constraints:
+- Do not output diagnosis or treatment advice.
+- Prefer public, de-identified data.
+- If sources are insufficient, state so directly."""
 
 QUERY_TEMPLATE = """\
-Based on the following source passages from the bioelectricity and biomedical \
-research literature, answer the user's question.
+Retrieved source passages from the bioelectricity and biomedical research corpus:
 
 === SOURCE PASSAGES ===
 {context}
 ========================
 
-User question: {query}
+Query: {query}
 
-Provide a detailed, well-cited answer. Use [1], [2], etc. to cite sources inline."""
+Respond with the following structure:
+1. EVIDENCE — statements directly supported by the sources above (cite each)
+2. INFERENCE — logical derivations from the evidence (cite supporting sources)
+3. SPECULATION — hypotheses or connections not directly stated in sources (label confidence)
+4. UNCERTAINTY — what the sources do not address or where data is insufficient
+
+Use [1], [2], etc. for inline citations."""
+
+DISCOVERY_TEMPLATE = """\
+Retrieved source passages from the bioelectricity and biomedical research corpus:
+
+=== SOURCE PASSAGES ===
+{context}
+========================
+
+Research query: {query}
+
+Execute the discovery loop:
+
+1. EVIDENCE EXTRACTION — key findings directly from the sources (cite each)
+2. VARIABLE EXTRACTION — structured variables: organism, cell type, ion channels, \
+voltage ranges, gradients, interventions, outcomes. Format as name=value (unit) [source].
+3. PATTERN COMPARISON — compare findings across sources. Note agreements, conflicts, gaps.
+4. HYPOTHESES — generate testable hypotheses from the patterns. \
+State confidence (low/medium/high) based on evidence density.
+5. VALIDATION STRATEGIES — propose low-cost ways to test each hypothesis \
+(datasets, simulations, re-analysis of existing data).
+6. UNCERTAINTY — explicit gaps, missing variables, conflicting evidence.
+
+Be precise. No filler."""
 
 
 class RAGPipeline:
-    """End-to-end RAG: retrieval → context assembly → LLM generation."""
+    """End-to-end RAG implementing the three-layer research architecture.
+
+    Standard mode: retrieve → assemble context → generate structured response
+    Discovery mode: retrieve → extract variables → compare → hypothesize → log
+    """
 
     def __init__(
         self,
@@ -70,7 +132,7 @@ class RAGPipeline:
         return self._llm_client
 
     # ------------------------------------------------------------------
-    # Main query flow
+    # Standard query (Layer 1+2+3)
     # ------------------------------------------------------------------
     def query(
         self,
@@ -81,7 +143,7 @@ class RAGPipeline:
         """Run the full RAG pipeline for a question."""
         n = n_results or self.n_retrieve
 
-        # 1. Retrieve
+        # Layer 2 — Index: retrieve
         results = self.store.search(
             query=question, n_results=n, filter_source=filter_source
         )
@@ -90,47 +152,102 @@ class RAGPipeline:
         if not results:
             return RAGResponse(
                 query=question,
-                answer="No relevant sources found in the database. "
-                "Try adding more papers or rephrasing your query.",
+                answer="No relevant sources found in the index. "
+                "The Library contains no material matching this query. "
+                "Add papers with 'acheron collect' or 'acheron add'.",
                 sources=[],
                 model_used=self.settings.llm_model,
             )
 
-        # 2. Rerank / select top context passages
+        # Select top context passages (source diversity)
         top_results = self._select_context(results)
 
-        # 3. Build prompt
+        # Layer 3 — Compute: generate structured response
         context_str = self._format_context(top_results)
         user_prompt = QUERY_TEMPLATE.format(context=context_str, query=question)
+        raw_answer = self._generate(user_prompt)
 
-        # 4. Generate
-        answer = self._generate(user_prompt)
+        # Parse structured sections from the response
+        evidence, inference, speculation = self._parse_epistemic_sections(raw_answer)
 
         return RAGResponse(
             query=question,
-            answer=answer,
+            answer=raw_answer,
             sources=top_results,
             model_used=self.settings.llm_model,
             total_chunks_searched=len(results),
+            evidence_statements=evidence,
+            inference_statements=inference,
+            speculation_statements=speculation,
         )
 
+    # ------------------------------------------------------------------
+    # Discovery loop (full Layer 3)
+    # ------------------------------------------------------------------
+    def discover(
+        self,
+        question: str,
+        filter_source: Optional[str] = None,
+        n_results: Optional[int] = None,
+    ) -> DiscoveryResult:
+        """Execute the full discovery loop.
+
+        1. Retrieve relevant evidence
+        2. Extract variables
+        3. Compare patterns
+        4. Generate testable hypotheses
+        5. Propose low-cost validation strategies
+        6. Return structured result for ledger logging
+        """
+        n = n_results or self.n_retrieve
+
+        # Layer 2 — retrieve
+        results = self.store.search(
+            query=question, n_results=n, filter_source=filter_source
+        )
+
+        if not results:
+            return DiscoveryResult(
+                query=question,
+                evidence=["No sources retrieved."],
+                uncertainty_notes=["Library contains no material for this query."],
+                model_used=self.settings.llm_model,
+            )
+
+        top_results = self._select_context(results)
+
+        # Layer 3 — discovery compute
+        context_str = self._format_context(top_results)
+        user_prompt = DISCOVERY_TEMPLATE.format(context=context_str, query=question)
+        raw_output = self._generate(user_prompt, max_tokens=3000)
+
+        # Parse the structured discovery output
+        return self._parse_discovery_output(
+            raw_output=raw_output,
+            query=question,
+            sources=top_results,
+            total_searched=len(results),
+        )
+
+    # ------------------------------------------------------------------
+    # Retrieve-only (Layer 2 only)
+    # ------------------------------------------------------------------
     def retrieve_only(
         self,
         question: str,
         n_results: int = 10,
         filter_source: Optional[str] = None,
     ) -> list[QueryResult]:
-        """Retrieve relevant passages without generating an answer."""
+        """Retrieve relevant passages without invoking Compute layer."""
         return self.store.search(
             query=question, n_results=n_results, filter_source=filter_source
         )
 
     # ------------------------------------------------------------------
-    # Internal
+    # Internal — context selection
     # ------------------------------------------------------------------
     def _select_context(self, results: list[QueryResult]) -> list[QueryResult]:
         """Select the best passages for context, deduplicating by paper."""
-        # Sort by relevance, then pick top N, preferring diversity of sources
         sorted_results = sorted(results, key=lambda r: r.relevance_score, reverse=True)
 
         selected: list[QueryResult] = []
@@ -161,8 +278,11 @@ class RAGPipeline:
             parts.append(f"{header}{section_note}\n{r.text}")
         return "\n\n".join(parts)
 
-    def _generate(self, user_prompt: str) -> str:
-        """Call the LLM to generate a cited answer."""
+    # ------------------------------------------------------------------
+    # Internal — LLM generation
+    # ------------------------------------------------------------------
+    def _generate(self, user_prompt: str, max_tokens: int = 2048) -> str:
+        """Call the LLM (Compute layer). Treats API calls as scarce."""
         try:
             response = self.llm.chat.completions.create(
                 model=self.settings.llm_model,
@@ -171,12 +291,200 @@ class RAGPipeline:
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,
-                max_tokens=2048,
+                max_tokens=max_tokens,
             )
             return response.choices[0].message.content or ""
         except Exception:
-            logger.exception("LLM generation failed")
+            logger.exception("LLM generation failed (Compute layer)")
             return (
-                "Error: Could not generate an answer. "
-                "Check your LLM API key and configuration."
+                "Error: Compute layer unavailable. "
+                "Check LLM API key and endpoint configuration."
             )
+
+    # ------------------------------------------------------------------
+    # Internal — parsing structured output
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_epistemic_sections(text: str) -> tuple[list[str], list[str], list[str]]:
+        """Parse EVIDENCE / INFERENCE / SPECULATION sections from LLM output."""
+        evidence: list[str] = []
+        inference: list[str] = []
+        speculation: list[str] = []
+
+        current: list[str] | None = None
+
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            upper = stripped.upper()
+            if any(marker in upper for marker in ["EVIDENCE", "## EVIDENCE", "**EVIDENCE"]):
+                current = evidence
+                continue
+            elif any(marker in upper for marker in ["INFERENCE", "## INFERENCE", "**INFERENCE"]):
+                current = inference
+                continue
+            elif any(
+                marker in upper
+                for marker in ["SPECULATION", "## SPECULATION", "**SPECULATION"]
+            ):
+                current = speculation
+                continue
+            elif any(
+                marker in upper
+                for marker in ["UNCERTAINTY", "## UNCERTAINTY", "**UNCERTAINTY"]
+            ):
+                current = None  # uncertainty is captured in the raw answer
+                continue
+
+            if current is not None and stripped.lstrip("- "):
+                current.append(stripped.lstrip("- "))
+
+        return evidence, inference, speculation
+
+    @staticmethod
+    def _parse_discovery_output(
+        raw_output: str,
+        query: str,
+        sources: list[QueryResult],
+        total_searched: int,
+    ) -> DiscoveryResult:
+        """Parse the full discovery loop output into structured fields."""
+        evidence: list[str] = []
+        inference: list[str] = []
+        speculation: list[str] = []
+        variables: list[StructuredVariable] = []
+        hypotheses: list[Hypothesis] = []
+        uncertainty: list[str] = []
+
+        current_section = ""
+
+        for line in raw_output.split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            upper = stripped.upper()
+
+            # Detect section headers
+            if any(m in upper for m in ["EVIDENCE EXTRACTION", "EVIDENCE —", "1. EVIDENCE"]):
+                current_section = "evidence"
+                continue
+            elif any(m in upper for m in ["VARIABLE EXTRACTION", "VARIABLE —", "2. VARIABLE"]):
+                current_section = "variables"
+                continue
+            elif any(m in upper for m in ["PATTERN COMPARISON", "PATTERN —", "3. PATTERN"]):
+                current_section = "patterns"
+                continue
+            elif any(m in upper for m in ["HYPOTHES", "4. HYPOTHES"]):
+                current_section = "hypotheses"
+                continue
+            elif any(m in upper for m in ["VALIDATION", "5. VALIDATION"]):
+                current_section = "validation"
+                continue
+            elif any(m in upper for m in ["UNCERTAINTY", "6. UNCERTAINTY"]):
+                current_section = "uncertainty"
+                continue
+
+            content = stripped.lstrip("- *")
+            if not content:
+                continue
+
+            if current_section == "evidence":
+                evidence.append(content)
+            elif current_section == "variables":
+                var = _try_parse_variable(content)
+                if var:
+                    variables.append(var)
+                else:
+                    evidence.append(content)
+            elif current_section == "patterns":
+                inference.append(content)
+            elif current_section == "hypotheses":
+                hyp = _try_parse_hypothesis(content)
+                if hyp:
+                    hypotheses.append(hyp)
+                else:
+                    speculation.append(content)
+            elif current_section == "validation":
+                if hypotheses:
+                    hypotheses[-1].validation_strategy = content
+                else:
+                    speculation.append(f"Validation: {content}")
+            elif current_section == "uncertainty":
+                uncertainty.append(content)
+
+        settings = get_settings()
+        return DiscoveryResult(
+            query=query,
+            evidence=evidence,
+            inference=inference,
+            speculation=speculation,
+            variables=variables,
+            hypotheses=hypotheses,
+            sources=sources,
+            model_used=settings.llm_model,
+            total_chunks_searched=total_searched,
+            uncertainty_notes=uncertainty,
+        )
+
+
+# ======================================================================
+# Parsing helpers
+# ======================================================================
+def _try_parse_variable(text: str) -> StructuredVariable | None:
+    """Attempt to parse a variable from 'name=value (unit) [source]' format."""
+    if "=" not in text:
+        return None
+    try:
+        name_part, rest = text.split("=", 1)
+        name = name_part.strip()
+
+        source_ref = ""
+        if "[" in rest and "]" in rest:
+            bracket_start = rest.index("[")
+            bracket_end = rest.index("]") + 1
+            source_ref = rest[bracket_start:bracket_end].strip()
+            rest = rest[:bracket_start].strip()
+
+        unit = ""
+        if "(" in rest and ")" in rest:
+            paren_start = rest.index("(")
+            paren_end = rest.index(")") + 1
+            unit = rest[paren_start + 1 : paren_end - 1].strip()
+            value = rest[:paren_start].strip()
+        else:
+            value = rest.strip()
+
+        return StructuredVariable(
+            name=name,
+            value=value,
+            unit=unit,
+            source_ref=source_ref,
+        )
+    except (ValueError, IndexError):
+        return None
+
+
+def _try_parse_hypothesis(text: str) -> Hypothesis | None:
+    """Attempt to parse a hypothesis with optional confidence tag."""
+    if len(text) < 10:
+        return None
+
+    confidence = "low"
+    lower = text.lower()
+    if "high confidence" in lower or "(high)" in lower:
+        confidence = "high"
+    elif "medium confidence" in lower or "(medium)" in lower:
+        confidence = "medium"
+
+    refs = []
+    for match in re.finditer(r"\[(\d+)\]", text):
+        refs.append(match.group(0))
+
+    return Hypothesis(
+        statement=text,
+        supporting_refs=refs,
+        confidence=confidence,
+    )

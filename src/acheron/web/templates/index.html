@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acheron Nexus — Bioelectricity Research Assistant</title>
+    <title>Nexus — Bioelectric Research Intelligence</title>
     <style>
         :root {
             --bg: #0d1117;
@@ -12,78 +12,93 @@
             --text: #c9d1d9;
             --text-dim: #8b949e;
             --accent: #58a6ff;
-            --accent2: #3fb950;
-            --accent3: #d2a8ff;
-            --danger: #f85149;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+            --purple: #d2a8ff;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
             background: var(--bg);
             color: var(--text);
             line-height: 1.6;
+            font-size: 14px;
         }
         .container { max-width: 1000px; margin: 0 auto; padding: 2rem; }
 
         header {
             text-align: center;
-            padding: 2rem 0;
+            padding: 1.5rem 0;
             border-bottom: 1px solid var(--border);
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
-        header h1 { color: var(--accent); font-size: 1.8rem; }
-        header p { color: var(--text-dim); margin-top: 0.5rem; }
+        header h1 { color: var(--accent); font-size: 1.6rem; letter-spacing: 0.05em; }
+        header .subtitle { color: var(--text-dim); font-size: 0.85rem; margin-top: 0.25rem; }
+        header .arch {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+            letter-spacing: 0.1em;
+        }
+        header .arch span { margin: 0 0.5rem; }
+        .l1 { color: var(--green); }
+        .l2 { color: var(--yellow); }
+        .l3 { color: var(--purple); }
 
         .stats-bar {
             display: flex;
-            gap: 2rem;
+            gap: 1.5rem;
             justify-content: center;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
         .stat {
             background: var(--surface);
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
+            padding: 0.5rem 1.2rem;
+            border-radius: 6px;
             border: 1px solid var(--border);
             text-align: center;
         }
-        .stat-value { font-size: 1.5rem; font-weight: bold; color: var(--accent2); }
-        .stat-label { font-size: 0.8rem; color: var(--text-dim); }
+        .stat-value { font-size: 1.3rem; font-weight: bold; color: var(--green); }
+        .stat-label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
 
         .query-section {
             background: var(--surface);
-            padding: 1.5rem;
-            border-radius: 12px;
+            padding: 1.25rem;
+            border-radius: 8px;
             border: 1px solid var(--border);
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
         .query-input {
             width: 100%;
-            padding: 0.75rem 1rem;
+            padding: 0.6rem 0.8rem;
             background: var(--bg);
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: 6px;
             color: var(--text);
-            font-size: 1rem;
+            font-family: inherit;
+            font-size: 0.9rem;
             resize: vertical;
-            min-height: 60px;
+            min-height: 50px;
         }
         .query-input:focus { outline: none; border-color: var(--accent); }
         .controls {
             display: flex;
-            gap: 1rem;
-            margin-top: 1rem;
+            gap: 0.75rem;
+            margin-top: 0.75rem;
             align-items: center;
+            flex-wrap: wrap;
         }
         button {
             background: var(--accent);
             color: #fff;
             border: none;
-            padding: 0.6rem 1.5rem;
-            border-radius: 6px;
-            font-size: 0.9rem;
+            padding: 0.5rem 1.2rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
             cursor: pointer;
             font-weight: 600;
+            font-family: inherit;
         }
         button:hover { opacity: 0.9; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -92,89 +107,148 @@
             border: 1px solid var(--border);
             color: var(--text);
         }
+        button.discover { background: var(--purple); }
 
         select {
             background: var(--bg);
             color: var(--text);
             border: 1px solid var(--border);
-            padding: 0.5rem;
-            border-radius: 6px;
+            padding: 0.4rem;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.8rem;
         }
 
-        #results { margin-top: 1.5rem; }
-        .answer-box {
+        #results { margin-top: 1rem; }
+
+        .section-box {
             background: var(--surface);
-            padding: 1.5rem;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            margin-bottom: 1.5rem;
+            padding: 1rem;
+            border-radius: 8px;
+            border-left: 3px solid var(--border);
+            margin-bottom: 1rem;
         }
-        .answer-box h3 { color: var(--accent); margin-bottom: 0.75rem; }
-        .answer-content { white-space: pre-wrap; line-height: 1.8; }
+        .section-box h3 {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.5rem;
+        }
+        .section-box.evidence { border-left-color: var(--green); }
+        .section-box.evidence h3 { color: var(--green); }
+        .section-box.inference { border-left-color: var(--yellow); }
+        .section-box.inference h3 { color: var(--yellow); }
+        .section-box.speculation { border-left-color: var(--red); }
+        .section-box.speculation h3 { color: var(--red); }
+        .section-box.uncertainty { border-left-color: var(--text-dim); }
+        .section-box.uncertainty h3 { color: var(--text-dim); }
+        .section-box.variables { border-left-color: var(--accent); }
+        .section-box.variables h3 { color: var(--accent); }
+        .section-box.hypotheses { border-left-color: var(--purple); }
+        .section-box.hypotheses h3 { color: var(--purple); }
+
+        .section-box ul { list-style: none; padding: 0; }
+        .section-box li { padding: 0.2rem 0; padding-left: 1rem; position: relative; }
+        .section-box li::before { content: '-'; position: absolute; left: 0; color: var(--text-dim); }
+
+        .answer-raw {
+            background: var(--surface);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            margin-bottom: 1rem;
+            white-space: pre-wrap;
+            line-height: 1.7;
+        }
 
         .sources-box {
             background: var(--surface);
-            padding: 1.5rem;
-            border-radius: 12px;
+            padding: 1rem;
+            border-radius: 8px;
             border: 1px solid var(--border);
         }
-        .sources-box h3 { color: var(--accent3); margin-bottom: 0.75rem; }
+        .sources-box h3 {
+            color: var(--green);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.5rem;
+        }
         .source-item {
-            padding: 0.75rem;
+            padding: 0.5rem 0;
             border-bottom: 1px solid var(--border);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
         }
         .source-item:last-child { border-bottom: none; }
-        .source-title { color: var(--accent); font-weight: 600; }
-        .source-meta { color: var(--text-dim); font-size: 0.8rem; margin-top: 0.25rem; }
-        .source-text { margin-top: 0.5rem; color: var(--text-dim); font-size: 0.85rem; }
-        .score { color: var(--accent2); font-weight: bold; }
+        .source-title { color: var(--accent); }
+        .source-meta { color: var(--text-dim); font-size: 0.75rem; }
+        .source-text { color: var(--text-dim); font-size: 0.8rem; margin-top: 0.25rem; }
+        .score { color: var(--green); }
+        .conf-high { color: var(--green); }
+        .conf-medium { color: var(--yellow); }
+        .conf-low { color: var(--red); }
+
+        .var-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .var-table th { text-align: left; color: var(--text-dim); padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); }
+        .var-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); }
+
+        .hyp-item { padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+        .hyp-item:last-child { border-bottom: none; }
+        .hyp-meta { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem; }
 
         .upload-section {
             background: var(--surface);
-            padding: 1.5rem;
-            border-radius: 12px;
+            padding: 1rem;
+            border-radius: 8px;
             border: 1px solid var(--border);
-            margin-top: 2rem;
+            margin-top: 1.5rem;
         }
-        .upload-section h3 { color: var(--accent3); margin-bottom: 1rem; }
-        .upload-form { display: flex; flex-direction: column; gap: 0.75rem; }
+        .upload-section h3 { color: var(--green); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+        .upload-form { display: flex; flex-direction: column; gap: 0.5rem; }
         .upload-form input[type="text"], .upload-form input[type="file"] {
             background: var(--bg);
             color: var(--text);
             border: 1px solid var(--border);
-            padding: 0.5rem;
-            border-radius: 6px;
+            padding: 0.4rem;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.85rem;
         }
 
         .loading { text-align: center; padding: 2rem; color: var(--text-dim); }
-        .meta-line { color: var(--text-dim); font-size: 0.8rem; margin-top: 1rem; }
+        .meta-line { color: var(--text-dim); font-size: 0.75rem; margin-top: 0.75rem; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Acheron Nexus</h1>
-            <p>Bioelectricity &amp; Biomedical Research Assistant</p>
+            <h1>NEXUS</h1>
+            <div class="subtitle">Bioelectric Research Intelligence</div>
+            <div class="arch">
+                <span class="l1">LIBRARY</span> |
+                <span class="l2">INDEX</span> |
+                <span class="l3">COMPUTE</span>
+            </div>
         </header>
 
         <div class="stats-bar">
             <div class="stat">
                 <div class="stat-value" id="paper-count">{{ stats.total_papers }}</div>
-                <div class="stat-label">Papers</div>
+                <div class="stat-label">Library</div>
             </div>
             <div class="stat">
                 <div class="stat-value" id="chunk-count">{{ stats.total_chunks }}</div>
-                <div class="stat-label">Indexed Chunks</div>
+                <div class="stat-label">Index</div>
             </div>
         </div>
 
         <div class="query-section">
             <textarea class="query-input" id="query-input"
-                placeholder="Ask about planarian bioelectricity, EEG cognitive patterns, ion channel dynamics, bioelectric morphogenesis..."></textarea>
+                placeholder="Query the bioelectricity corpus..."></textarea>
             <div class="controls">
-                <button id="ask-btn" onclick="submitQuery()">Ask</button>
-                <button class="secondary" id="retrieve-btn" onclick="submitQuery(true)">Retrieve Only</button>
+                <button id="ask-btn" onclick="submitQuery()">Query</button>
+                <button class="discover" onclick="submitDiscover()">Discover</button>
+                <button class="secondary" onclick="submitQuery(true)">Retrieve Only</button>
                 <select id="source-filter">
                     <option value="">All Sources</option>
                     <option value="pubmed">PubMed</option>
@@ -189,13 +263,13 @@
         <div id="results"></div>
 
         <div class="upload-section">
-            <h3>Add Paper Manually</h3>
+            <h3>Add to Library</h3>
             <form class="upload-form" id="upload-form" onsubmit="uploadPaper(event)">
                 <input type="file" name="file" accept=".pdf" required>
-                <input type="text" name="title" placeholder="Paper title (optional)">
+                <input type="text" name="title" placeholder="Title (optional)">
                 <input type="text" name="doi" placeholder="DOI (optional)">
                 <input type="text" name="authors" placeholder="Authors, comma-separated (optional)">
-                <button type="submit">Upload &amp; Index</button>
+                <button type="submit">Upload</button>
             </form>
             <div id="upload-status"></div>
         </div>
@@ -212,89 +286,166 @@
             }
         });
 
+        function getParams() {
+            return {
+                question: queryInput.value.trim(),
+                source_filter: document.getElementById('source-filter').value || null,
+                n_results: 10
+            };
+        }
+
         async function submitQuery(retrieveOnly = false) {
-            const question = queryInput.value.trim();
-            if (!question) return;
+            const p = getParams();
+            if (!p.question) return;
+            p.retrieve_only = retrieveOnly;
 
-            const sourceFilter = document.getElementById('source-filter').value || null;
-
-            resultsDiv.innerHTML = '<div class="loading">Searching knowledge base...</div>';
-
+            resultsDiv.innerHTML = '<div class="loading">Retrieving from Index...</div>';
             try {
                 const resp = await fetch('/api/query', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        question,
-                        source_filter: sourceFilter,
-                        n_results: 10,
-                        retrieve_only: retrieveOnly
-                    })
+                    body: JSON.stringify(p)
                 });
                 const data = await resp.json();
-                renderResults(data, retrieveOnly);
+                renderQueryResults(data, retrieveOnly);
             } catch (err) {
-                resultsDiv.innerHTML = `<div class="answer-box"><p style="color:var(--danger)">Error: ${err.message}</p></div>`;
+                resultsDiv.innerHTML = '<div class="answer-raw" style="color:var(--red)">Error: ' + esc(err.message) + '</div>';
             }
         }
 
-        function renderResults(data, retrieveOnly) {
-            let html = '';
+        async function submitDiscover() {
+            const p = getParams();
+            if (!p.question) return;
 
-            if (!retrieveOnly && data.answer) {
-                html += `<div class="answer-box">
-                    <h3>Answer</h3>
-                    <div class="answer-content">${escapeHtml(data.answer)}</div>
-                    <div class="meta-line">Model: ${data.model_used} | Chunks searched: ${data.total_chunks_searched}</div>
-                </div>`;
+            resultsDiv.innerHTML = '<div class="loading">Executing discovery loop (Compute layer)...</div>';
+            try {
+                const resp = await fetch('/api/discover', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(p)
+                });
+                const data = await resp.json();
+                renderDiscoverResults(data);
+            } catch (err) {
+                resultsDiv.innerHTML = '<div class="answer-raw" style="color:var(--red)">Error: ' + esc(err.message) + '</div>';
+            }
+        }
+
+        function renderQueryResults(data, retrieveOnly) {
+            let html = '';
+            const hasStructured = (data.evidence && data.evidence.length) ||
+                                  (data.inference && data.inference.length) ||
+                                  (data.speculation && data.speculation.length);
+
+            if (!retrieveOnly && hasStructured) {
+                if (data.evidence && data.evidence.length) {
+                    html += renderSection('evidence', 'EVIDENCE', data.evidence);
+                }
+                if (data.inference && data.inference.length) {
+                    html += renderSection('inference', 'INFERENCE', data.inference);
+                }
+                if (data.speculation && data.speculation.length) {
+                    html += renderSection('speculation', 'SPECULATION', data.speculation);
+                }
+            } else if (!retrieveOnly && data.answer) {
+                html += '<div class="answer-raw">' + esc(data.answer) + '</div>';
             }
 
-            if (data.sources && data.sources.length > 0) {
-                html += `<div class="sources-box"><h3>Sources (${data.sources.length})</h3>`;
-                data.sources.forEach((s, i) => {
-                    const authors = Array.isArray(s.authors) ? s.authors.slice(0, 3).join(', ') : '';
-                    const doi = s.doi ? ` | DOI: ${s.doi}` : '';
-                    html += `<div class="source-item">
-                        <div class="source-title">[${i+1}] ${escapeHtml(s.paper_title)}</div>
-                        <div class="source-meta">${escapeHtml(authors)}${doi}${s.section ? ' | Section: ' + escapeHtml(s.section) : ''} | <span class="score">Score: ${(s.score || 0).toFixed(3)}</span></div>
-                        <div class="source-text">${escapeHtml((s.text || '').substring(0, 300))}...</div>
-                    </div>`;
+            html += renderSources(data.sources);
+            if (data.model_used) {
+                html += '<div class="meta-line">Compute: ' + esc(data.model_used) + ' | Index: ' + data.total_chunks_searched + ' chunks</div>';
+            }
+
+            resultsDiv.innerHTML = html || '<div class="answer-raw">No results.</div>';
+        }
+
+        function renderDiscoverResults(data) {
+            let html = '';
+
+            if (data.evidence && data.evidence.length) {
+                html += renderSection('evidence', '1. EVIDENCE', data.evidence);
+            }
+            if (data.variables && data.variables.length) {
+                html += '<div class="section-box variables"><h3>2. Extracted Variables</h3>' +
+                    '<table class="var-table"><tr><th>Name</th><th>Value</th><th>Unit</th><th>Src</th></tr>';
+                data.variables.forEach(function(v) {
+                    html += '<tr><td>' + esc(v.name) + '</td><td>' + esc(v.value) + '</td><td>' + esc(v.unit) + '</td><td>' + esc(v.source_ref) + '</td></tr>';
+                });
+                html += '</table></div>';
+            }
+            if (data.inference && data.inference.length) {
+                html += renderSection('inference', '3. PATTERN COMPARISON', data.inference);
+            }
+            if (data.hypotheses && data.hypotheses.length) {
+                html += '<div class="section-box hypotheses"><h3>4. Hypotheses</h3>';
+                data.hypotheses.forEach(function(h) {
+                    var confClass = 'conf-' + (h.confidence || 'low');
+                    html += '<div class="hyp-item">' +
+                        '<div class="hyp-statement">' + esc(h.statement) + '</div>' +
+                        '<div class="hyp-meta">Confidence: <span class="' + confClass + '">' + esc(h.confidence) + '</span>' +
+                        (h.validation ? ' | Validation: ' + esc(h.validation) : '') + '</div>' +
+                    '</div>';
                 });
                 html += '</div>';
             }
+            if (data.speculation && data.speculation.length) {
+                html += renderSection('speculation', 'SPECULATION', data.speculation);
+            }
+            if (data.uncertainty && data.uncertainty.length) {
+                html += renderSection('uncertainty', 'UNCERTAINTY', data.uncertainty);
+            }
 
-            if (!html) html = '<div class="answer-box"><p>No results found.</p></div>';
-            resultsDiv.innerHTML = html;
+            html += renderSources(data.sources);
+            html += '<div class="meta-line">Compute: ' + esc(data.model_used) + ' | Index: ' + data.total_chunks_searched + ' chunks | Logged to ledger</div>';
+
+            resultsDiv.innerHTML = html || '<div class="answer-raw">No results.</div>';
         }
 
-        function escapeHtml(text) {
-            const d = document.createElement('div');
-            d.textContent = text;
+        function renderSection(cls, title, items) {
+            var html = '<div class="section-box ' + cls + '"><h3>' + esc(title) + '</h3><ul>';
+            items.forEach(function(item) { html += '<li>' + esc(item) + '</li>'; });
+            return html + '</ul></div>';
+        }
+
+        function renderSources(sources) {
+            if (!sources || !sources.length) return '';
+            var html = '<div class="sources-box"><h3>Sources (Library) — ' + sources.length + '</h3>';
+            sources.forEach(function(s, i) {
+                var authors = Array.isArray(s.authors) ? s.authors.slice(0, 3).join(', ') : '';
+                var doi = s.doi ? ' | DOI: ' + s.doi : '';
+                html += '<div class="source-item">' +
+                    '<div class="source-title">[' + (i+1) + '] ' + esc(s.paper_title) + '</div>' +
+                    '<div class="source-meta">' + esc(authors) + doi + (s.section ? ' | ' + esc(s.section) : '') + ' | <span class="score">' + (s.score || 0).toFixed(3) + '</span></div>' +
+                    '<div class="source-text">' + esc((s.text || '').substring(0, 250)) + '</div>' +
+                '</div>';
+            });
+            return html + '</div>';
+        }
+
+        function esc(text) {
+            var d = document.createElement('div');
+            d.textContent = text || '';
             return d.innerHTML;
         }
 
         async function uploadPaper(event) {
             event.preventDefault();
-            const form = document.getElementById('upload-form');
-            const status = document.getElementById('upload-status');
-            const formData = new FormData(form);
-
-            status.innerHTML = '<div class="loading">Uploading and indexing...</div>';
-
+            var form = document.getElementById('upload-form');
+            var status = document.getElementById('upload-status');
+            status.innerHTML = '<div class="loading">Uploading to Library...</div>';
             try {
-                const resp = await fetch('/api/upload', { method: 'POST', body: formData });
-                const data = await resp.json();
+                var resp = await fetch('/api/upload', { method: 'POST', body: new FormData(form) });
+                var data = await resp.json();
                 if (data.error) {
-                    status.innerHTML = `<p style="color:var(--danger)">${data.error}</p>`;
+                    status.innerHTML = '<p style="color:var(--red)">' + esc(data.error) + '</p>';
                 } else {
-                    status.innerHTML = `<p style="color:var(--accent2)">${data.message} — "${data.title}"</p>`;
-                    // Refresh stats
-                    const stats = await (await fetch('/api/stats')).json();
+                    status.innerHTML = '<p style="color:var(--green)">' + esc(data.message) + '</p>';
+                    var stats = await (await fetch('/api/stats')).json();
                     document.getElementById('paper-count').textContent = stats.total_papers;
                     document.getElementById('chunk-count').textContent = stats.total_chunks;
                 }
             } catch (err) {
-                status.innerHTML = `<p style="color:var(--danger)">Upload failed: ${err.message}</p>`;
+                status.innerHTML = '<p style="color:var(--red)">Failed: ' + esc(err.message) + '</p>';
             }
         }
     </script>

@@ -1,4 +1,4 @@
-"""FastAPI web application for Acheron Nexus."""
+"""FastAPI web application for Acheron Nexus — bioelectric research intelligence."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from acheron.vectorstore.store import VectorStore
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Acheron Nexus", version="0.1.0")
+app = FastAPI(title="Acheron Nexus", version="0.2.0")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 # Lazy singletons
@@ -50,10 +50,26 @@ class QueryRequest(BaseModel):
     source_filter: Optional[str] = None
     n_results: int = 10
     retrieve_only: bool = False
+    discover_mode: bool = False
 
 
 class QueryResponse(BaseModel):
     answer: str
+    sources: list[dict]
+    model_used: str
+    total_chunks_searched: int
+    evidence: list[str] = []
+    inference: list[str] = []
+    speculation: list[str] = []
+
+
+class DiscoverResponse(BaseModel):
+    evidence: list[str]
+    inference: list[str]
+    speculation: list[str]
+    variables: list[dict]
+    hypotheses: list[dict]
+    uncertainty: list[str]
     sources: list[dict]
     model_used: str
     total_chunks_searched: int
@@ -63,6 +79,7 @@ class StatsResponse(BaseModel):
     total_papers: int
     total_chunks: int
     papers_by_source: dict[str, int]
+    ledger_entries: int = 0
 
 
 # ======================================================================
@@ -124,21 +141,78 @@ async def api_query(req: QueryRequest):
         ],
         model_used=response.model_used,
         total_chunks_searched=response.total_chunks_searched,
+        evidence=response.evidence_statements,
+        inference=response.inference_statements,
+        speculation=response.speculation_statements,
+    )
+
+
+@app.post("/api/discover", response_model=DiscoverResponse)
+async def api_discover(req: QueryRequest):
+    """Execute the discovery loop and return structured results."""
+    from acheron.rag.ledger import ExperimentLedger
+
+    pipeline = get_pipeline()
+    result = pipeline.discover(
+        req.question, filter_source=req.source_filter, n_results=req.n_results
+    )
+
+    # Auto-log to ledger
+    ledger = ExperimentLedger()
+    ledger.record(result)
+
+    return DiscoverResponse(
+        evidence=result.evidence,
+        inference=result.inference,
+        speculation=result.speculation,
+        variables=[
+            {"name": v.name, "value": v.value, "unit": v.unit, "source_ref": v.source_ref}
+            for v in result.variables
+        ],
+        hypotheses=[
+            {
+                "statement": h.statement,
+                "confidence": h.confidence,
+                "refs": h.supporting_refs,
+                "validation": h.validation_strategy,
+            }
+            for h in result.hypotheses
+        ],
+        uncertainty=result.uncertainty_notes,
+        sources=[
+            {
+                "text": s.text[:500],
+                "paper_title": s.paper_title,
+                "authors": s.authors,
+                "doi": s.doi,
+                "section": s.section,
+                "score": s.relevance_score,
+            }
+            for s in result.sources
+        ],
+        model_used=result.model_used,
+        total_chunks_searched=result.total_chunks_searched,
     )
 
 
 @app.get("/api/stats", response_model=StatsResponse)
 async def api_stats():
+    from acheron.rag.ledger import ExperimentLedger
+
     store = get_store()
     papers = store.list_papers()
     by_source: dict[str, int] = {}
     for p in papers:
         s = p.get("source", "unknown")
         by_source[s] = by_source.get(s, 0) + 1
+
+    ledger = ExperimentLedger()
+
     return StatsResponse(
         total_papers=len(papers),
         total_chunks=store.count(),
         papers_by_source=by_source,
+        ledger_entries=ledger.count(),
     )
 
 
@@ -148,6 +222,16 @@ async def api_papers():
     return store.list_papers()
 
 
+@app.get("/api/ledger")
+async def api_ledger():
+    """Return all experiment ledger entries."""
+    from acheron.rag.ledger import ExperimentLedger
+
+    ledger = ExperimentLedger()
+    entries = ledger.list_entries()
+    return [e.model_dump(mode="json") for e in entries]
+
+
 @app.post("/api/upload")
 async def api_upload(
     file: UploadFile = File(...),
@@ -155,7 +239,7 @@ async def api_upload(
     doi: str = Form(""),
     authors: str = Form(""),
 ):
-    """Upload and index a PDF."""
+    """Upload and index a PDF into the Library."""
     settings = get_settings()
     pdf_dir = settings.pdf_dir
     pdf_dir.mkdir(parents=True, exist_ok=True)
