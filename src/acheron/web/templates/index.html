@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acheron Nexus — Bioelectricity Research Assistant</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-dim: #8b949e;
+            --accent: #58a6ff;
+            --accent2: #3fb950;
+            --accent3: #d2a8ff;
+            --danger: #f85149;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        .container { max-width: 1000px; margin: 0 auto; padding: 2rem; }
+
+        header {
+            text-align: center;
+            padding: 2rem 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 2rem;
+        }
+        header h1 { color: var(--accent); font-size: 1.8rem; }
+        header p { color: var(--text-dim); margin-top: 0.5rem; }
+
+        .stats-bar {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+        .stat {
+            background: var(--surface);
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: var(--accent2); }
+        .stat-label { font-size: 0.8rem; color: var(--text-dim); }
+
+        .query-section {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            margin-bottom: 2rem;
+        }
+        .query-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 1rem;
+            resize: vertical;
+            min-height: 60px;
+        }
+        .query-input:focus { outline: none; border-color: var(--accent); }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+            align-items: center;
+        }
+        button {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 0.6rem 1.5rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button.secondary {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        select {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 0.5rem;
+            border-radius: 6px;
+        }
+
+        #results { margin-top: 1.5rem; }
+        .answer-box {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+        }
+        .answer-box h3 { color: var(--accent); margin-bottom: 0.75rem; }
+        .answer-content { white-space: pre-wrap; line-height: 1.8; }
+
+        .sources-box {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+        .sources-box h3 { color: var(--accent3); margin-bottom: 0.75rem; }
+        .source-item {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+        .source-item:last-child { border-bottom: none; }
+        .source-title { color: var(--accent); font-weight: 600; }
+        .source-meta { color: var(--text-dim); font-size: 0.8rem; margin-top: 0.25rem; }
+        .source-text { margin-top: 0.5rem; color: var(--text-dim); font-size: 0.85rem; }
+        .score { color: var(--accent2); font-weight: bold; }
+
+        .upload-section {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            margin-top: 2rem;
+        }
+        .upload-section h3 { color: var(--accent3); margin-bottom: 1rem; }
+        .upload-form { display: flex; flex-direction: column; gap: 0.75rem; }
+        .upload-form input[type="text"], .upload-form input[type="file"] {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 0.5rem;
+            border-radius: 6px;
+        }
+
+        .loading { text-align: center; padding: 2rem; color: var(--text-dim); }
+        .meta-line { color: var(--text-dim); font-size: 0.8rem; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Acheron Nexus</h1>
+            <p>Bioelectricity &amp; Biomedical Research Assistant</p>
+        </header>
+
+        <div class="stats-bar">
+            <div class="stat">
+                <div class="stat-value" id="paper-count">{{ stats.total_papers }}</div>
+                <div class="stat-label">Papers</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="chunk-count">{{ stats.total_chunks }}</div>
+                <div class="stat-label">Indexed Chunks</div>
+            </div>
+        </div>
+
+        <div class="query-section">
+            <textarea class="query-input" id="query-input"
+                placeholder="Ask about planarian bioelectricity, EEG cognitive patterns, ion channel dynamics, bioelectric morphogenesis..."></textarea>
+            <div class="controls">
+                <button id="ask-btn" onclick="submitQuery()">Ask</button>
+                <button class="secondary" id="retrieve-btn" onclick="submitQuery(true)">Retrieve Only</button>
+                <select id="source-filter">
+                    <option value="">All Sources</option>
+                    <option value="pubmed">PubMed</option>
+                    <option value="biorxiv">bioRxiv</option>
+                    <option value="arxiv">arXiv</option>
+                    <option value="physionet">PhysioNet</option>
+                    <option value="manual">Manual</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="results"></div>
+
+        <div class="upload-section">
+            <h3>Add Paper Manually</h3>
+            <form class="upload-form" id="upload-form" onsubmit="uploadPaper(event)">
+                <input type="file" name="file" accept=".pdf" required>
+                <input type="text" name="title" placeholder="Paper title (optional)">
+                <input type="text" name="doi" placeholder="DOI (optional)">
+                <input type="text" name="authors" placeholder="Authors, comma-separated (optional)">
+                <button type="submit">Upload &amp; Index</button>
+            </form>
+            <div id="upload-status"></div>
+        </div>
+    </div>
+
+    <script>
+        const resultsDiv = document.getElementById('results');
+        const queryInput = document.getElementById('query-input');
+
+        queryInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submitQuery();
+            }
+        });
+
+        async function submitQuery(retrieveOnly = false) {
+            const question = queryInput.value.trim();
+            if (!question) return;
+
+            const sourceFilter = document.getElementById('source-filter').value || null;
+
+            resultsDiv.innerHTML = '<div class="loading">Searching knowledge base...</div>';
+
+            try {
+                const resp = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        question,
+                        source_filter: sourceFilter,
+                        n_results: 10,
+                        retrieve_only: retrieveOnly
+                    })
+                });
+                const data = await resp.json();
+                renderResults(data, retrieveOnly);
+            } catch (err) {
+                resultsDiv.innerHTML = `<div class="answer-box"><p style="color:var(--danger)">Error: ${err.message}</p></div>`;
+            }
+        }
+
+        function renderResults(data, retrieveOnly) {
+            let html = '';
+
+            if (!retrieveOnly && data.answer) {
+                html += `<div class="answer-box">
+                    <h3>Answer</h3>
+                    <div class="answer-content">${escapeHtml(data.answer)}</div>
+                    <div class="meta-line">Model: ${data.model_used} | Chunks searched: ${data.total_chunks_searched}</div>
+                </div>`;
+            }
+
+            if (data.sources && data.sources.length > 0) {
+                html += `<div class="sources-box"><h3>Sources (${data.sources.length})</h3>`;
+                data.sources.forEach((s, i) => {
+                    const authors = Array.isArray(s.authors) ? s.authors.slice(0, 3).join(', ') : '';
+                    const doi = s.doi ? ` | DOI: ${s.doi}` : '';
+                    html += `<div class="source-item">
+                        <div class="source-title">[${i+1}] ${escapeHtml(s.paper_title)}</div>
+                        <div class="source-meta">${escapeHtml(authors)}${doi}${s.section ? ' | Section: ' + escapeHtml(s.section) : ''} | <span class="score">Score: ${(s.score || 0).toFixed(3)}</span></div>
+                        <div class="source-text">${escapeHtml((s.text || '').substring(0, 300))}...</div>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+
+            if (!html) html = '<div class="answer-box"><p>No results found.</p></div>';
+            resultsDiv.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        async function uploadPaper(event) {
+            event.preventDefault();
+            const form = document.getElementById('upload-form');
+            const status = document.getElementById('upload-status');
+            const formData = new FormData(form);
+
+            status.innerHTML = '<div class="loading">Uploading and indexing...</div>';
+
+            try {
+                const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (data.error) {
+                    status.innerHTML = `<p style="color:var(--danger)">${data.error}</p>`;
+                } else {
+                    status.innerHTML = `<p style="color:var(--accent2)">${data.message} — "${data.title}"</p>`;
+                    // Refresh stats
+                    const stats = await (await fetch('/api/stats')).json();
+                    document.getElementById('paper-count').textContent = stats.total_papers;
+                    document.getElementById('chunk-count').textContent = stats.total_chunks;
+                }
+            } catch (err) {
+                status.innerHTML = `<p style="color:var(--danger)">Upload failed: ${err.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
