@@ -1,9 +1,10 @@
-"""Acheron Nexus CLI — bioelectric research intelligence.
+"""Acheron Nexus CLI — System-2 bioelectric research engine.
 
 Three-layer architecture:
-  Layer 1 (Library)  — immutable source corpus
-  Layer 2 (Index)    — semantic retrieval and structured extraction
-  Layer 3 (Compute)  — analysis, pattern detection, hypothesis generation
+  Layer 1 (Knowledge)  — immutable source corpus
+  Layer 2 (Synthesis)  — semantic retrieval, bioelectric variable extraction
+  Layer 3 (Discovery)  — analysis, pattern detection, hypothesis generation,
+                          bioelectric schematic construction, validation paths
 """
 
 from __future__ import annotations
@@ -216,11 +217,11 @@ def _interactive_loop(pipeline, source_filter, n_results, retrieve_only):
     """Interactive query loop."""
     console.print(
         Panel(
-            "[bold cyan]Nexus[/] — Bioelectric Research Intelligence\n"
-            "Three-layer architecture: Library | Index | Compute\n\n"
+            "[bold cyan]Nexus[/] — System-2 Bioelectric Research Engine\n"
+            "Three-layer architecture: Knowledge | Synthesis | Discovery\n\n"
             "Commands:\n"
-            "  [dim]Type a question to query (Index + Compute)[/]\n"
-            "  [dim]Prefix with[/] /discover [dim]to run the discovery loop[/]\n"
+            "  [dim]Type a question to query (Synthesis + Discovery)[/]\n"
+            "  [dim]Prefix with[/] /discover [dim]to run the full discovery loop[/]\n"
             "  [dim]Type[/] quit [dim]to exit[/]",
             title="Acheron Nexus",
             border_style="cyan",
@@ -326,6 +327,12 @@ def _display_rag_response(response):
                 title="[bold red]SPECULATION[/]",
                 border_style="red",
             ))
+        if response.bioelectric_schematic:
+            console.print(Panel(
+                response.bioelectric_schematic,
+                title="[bold magenta]BIOELECTRIC SCHEMATIC[/]",
+                border_style="magenta",
+            ))
     else:
         # Fallback: display raw answer
         console.print(Panel(
@@ -335,7 +342,7 @@ def _display_rag_response(response):
         ))
 
     # Source list
-    console.print("\n[bold]Sources (Library):[/]")
+    console.print("\n[bold]Sources (Knowledge):[/]")
     seen = set()
     for i, src in enumerate(response.sources, 1):
         if src.paper_id in seen:
@@ -349,8 +356,8 @@ def _display_rag_response(response):
             f"  [{i}] {author_str}. [italic]\"{src.paper_title}\"[/].{doi_str}"
         )
     console.print(
-        f"\n[dim]Compute: {response.model_used} | "
-        f"Index: {response.total_chunks_searched} chunks searched[/]"
+        f"\n[dim]Discovery: {response.model_used} | "
+        f"Synthesis: {response.total_chunks_searched} chunks searched[/]"
     )
 
 
@@ -362,47 +369,76 @@ def _display_discovery_result(result):
     if result.evidence:
         console.print(Panel(
             "\n".join(f"  - {s}" for s in result.evidence),
-            title="[bold green]1. EVIDENCE[/]",
+            title="[bold green]1. EVIDENCE EXTRACTION[/]",
             border_style="green",
         ))
 
     # Variables
     if result.variables:
-        var_table = Table(title="2. EXTRACTED VARIABLES", show_lines=True)
+        var_table = Table(title="2. BIOELECTRIC VARIABLES", show_lines=True)
         var_table.add_column("Name", style="cyan")
         var_table.add_column("Value")
         var_table.add_column("Unit", style="dim")
+        var_table.add_column("Type", style="dim")
         var_table.add_column("Source", style="dim")
         for v in result.variables:
-            var_table.add_row(v.name, v.value, v.unit, v.source_ref)
+            var_table.add_row(
+                v.name, v.value, v.unit, v.variable_type, v.source_ref
+            )
         console.print(var_table)
 
     # Inference / Patterns
     if result.inference:
         console.print(Panel(
             "\n".join(f"  - {s}" for s in result.inference),
-            title="[bold yellow]3. PATTERN COMPARISON (Inference)[/]",
+            title="[bold yellow]3. PATTERN COMPARISON (Cross-source)[/]",
             border_style="yellow",
         ))
 
     # Hypotheses
     if result.hypotheses:
         hyp_table = Table(title="4. HYPOTHESES", show_lines=True)
-        hyp_table.add_column("Hypothesis", max_width=70)
-        hyp_table.add_column("Confidence", width=10)
+        hyp_table.add_column("Hypothesis", max_width=60)
+        hyp_table.add_column("Prior\nConf.", width=8)
+        hyp_table.add_column("Predicted Impact", max_width=40)
         hyp_table.add_column("Refs", width=10)
-        hyp_table.add_column("Validation Strategy", max_width=50)
+        hyp_table.add_column("Validation", max_width=40)
         for h in result.hypotheses:
             conf_style = {"high": "green", "medium": "yellow", "low": "red"}.get(
                 h.confidence, "dim"
             )
             hyp_table.add_row(
-                h.statement[:70],
+                h.statement[:60],
                 f"[{conf_style}]{h.confidence}[/{conf_style}]",
+                h.predicted_impact[:40] if h.predicted_impact else "",
                 ", ".join(h.supporting_refs[:3]),
-                h.validation_strategy[:50] if h.validation_strategy else "",
+                h.validation_strategy[:40] if h.validation_strategy else "",
             )
         console.print(hyp_table)
+
+    # Bioelectric Schematic
+    if result.bioelectric_schematic:
+        console.print(Panel(
+            result.bioelectric_schematic,
+            title="[bold magenta]5. BIOELECTRIC SCHEMATIC[/]",
+            border_style="magenta",
+        ))
+
+    # Validation Path
+    if result.validation_path:
+        console.print(Panel(
+            "\n".join(f"  - {s}" for s in result.validation_path),
+            title="[bold blue]6. VALIDATION PATH[/]",
+            border_style="blue",
+        ))
+
+    # Cross-species Notes
+    if result.cross_species_notes:
+        console.print(Panel(
+            "\n".join(f"  - {s}" for s in result.cross_species_notes),
+            title="[bold cyan]7. CROSS-SPECIES NOTES[/]",
+            border_style="cyan",
+        ))
 
     # Speculation
     if result.speculation:
@@ -416,12 +452,12 @@ def _display_discovery_result(result):
     if result.uncertainty_notes:
         console.print(Panel(
             "\n".join(f"  - {s}" for s in result.uncertainty_notes),
-            title="[bold dim]UNCERTAINTY[/]",
+            title="[bold dim]8. UNCERTAINTY[/]",
             border_style="dim",
         ))
 
     # Sources
-    console.print("\n[bold]Sources (Library):[/]")
+    console.print("\n[bold]Sources (Knowledge):[/]")
     seen = set()
     for i, src in enumerate(result.sources, 1):
         if src.paper_id in seen:
@@ -436,8 +472,8 @@ def _display_discovery_result(result):
         )
 
     console.print(
-        f"\n[dim]Compute: {result.model_used} | "
-        f"Index: {result.total_chunks_searched} chunks searched[/]"
+        f"\n[dim]Discovery: {result.model_used} | "
+        f"Synthesis: {result.total_chunks_searched} chunks searched[/]"
     )
 
 
@@ -629,15 +665,15 @@ def stats() -> None:
     lib_count = len(list(metadata_dir.glob("*.json"))) if metadata_dir.exists() else 0
 
     console.print(Panel(
-        f"[bold]Layer 1 (Library):[/]\n"
+        f"[bold]Layer 1 — Knowledge:[/]\n"
         f"  Paper records:    {lib_count}\n"
         f"  Data dir:         {settings.data_dir}\n\n"
-        f"[bold]Layer 2 (Index):[/]\n"
+        f"[bold]Layer 2 — Synthesis:[/]\n"
         f"  Papers indexed:   {len(papers)}\n"
         f"  Chunks indexed:   {total_chunks}\n"
         f"  Vector store:     {settings.vectorstore_dir}\n"
         f"  Embedding model:  {settings.embedding_model}\n\n"
-        f"[bold]Layer 3 (Compute):[/]\n"
+        f"[bold]Layer 3 — Discovery:[/]\n"
         f"  LLM model:        {settings.llm_model}\n"
         f"  Ledger entries:   {ledger_count}",
         title="[bold cyan]Nexus Status[/]",

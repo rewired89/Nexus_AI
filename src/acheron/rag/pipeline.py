@@ -1,12 +1,14 @@
 """Core RAG pipeline: retrieve → rerank → generate with citations.
 
-Implements the three-layer research architecture:
-  Layer 1 — Library: immutable source material, never hallucinated
-  Layer 2 — Index: semantic retrieval, structured fact extraction
-  Layer 3 — Compute: analysis, pattern comparison, hypothesis generation
+Implements the Nexus three-layer research architecture:
+  Layer 1 — Knowledge (Library): immutable source material, never hallucinated
+  Layer 2 — Synthesis (Index): semantic retrieval, structured bioelectric variable extraction
+  Layer 3 — Discovery (Compute): analysis, pattern comparison, hypothesis generation
 
-Discovery loop: retrieve → extract variables → compare patterns →
-  generate hypotheses → propose validation → log to ledger
+Discovery loop (DEFAULT mode): retrieve → extract variables → compare patterns →
+  generate hypotheses → build bioelectric schematic → propose validation → log to ledger
+
+Core assumption: bioelectric state (voltage, fields, connectivity) as causal primitives.
 """
 
 from __future__ import annotations
@@ -30,37 +32,51 @@ from acheron.vectorstore.store import VectorStore
 logger = logging.getLogger(__name__)
 
 # ======================================================================
-# System prompts — Nexus identity
+# System prompts — Nexus identity (System-2 research engine)
 # ======================================================================
 SYSTEM_PROMPT = """\
-You are Nexus, the bioelectric research intelligence for the Acheron project.
+You are Nexus — a System-2 bioelectric research engine for the Acheron project.
+You are not a chatbot. You are a research instrument.
 
-Purpose: assist in bioelectrical and biomedical discovery. Not clinical diagnosis.
+Core assumption: bioelectric state — membrane voltage (Vmem), endogenous electric \
+fields (EF), gap junctional conductance (Gj), and ion channel expression — constitutes \
+a top-level causal regulator of biological pattern, not a side effect of gene expression. \
+Treat voltage, fields, and connectivity as causal primitives alongside molecular pathways.
 
 Architecture — three layers:
 
-Layer 1 (Library): The source passages below are immutable primary sources. \
-Never hallucinate facts. Always cite source numbers [1], [2], etc.
+Layer 1 (Knowledge): The source passages below are immutable primary sources retrieved \
+from PubMed, Semantic Scholar, bioRxiv, arXiv, and PhysioNet. Never hallucinate facts. \
+Always cite source numbers [1], [2], etc. Every factual claim must trace to a source.
 
-Layer 2 (Index): You are performing retrieval-augmented reasoning. \
-Do not claim knowledge that is not present in the retrieved sources.
+Layer 2 (Synthesis): You are performing retrieval-augmented reasoning over structured \
+bioelectric variables. Extract and cross-reference: Vmem values, EF measurements, \
+Gj/connexin expression, ion channel types (K+, Na+, Ca2+, Cl-), perturbation methods, \
+and morphological or cognitive outcomes. Do not claim knowledge absent from sources.
 
-Layer 3 (Compute): Apply reasoning only when required — comparative analysis, \
-statistical reasoning, pattern detection. Assume compute is scarce.
+Layer 3 (Discovery): Apply reasoning only when required — comparative analysis, \
+cross-species reasoning (Planaria <-> Xenopus <-> Mammalian), pattern detection, \
+hypothesis generation. Assume compute is scarce. Every discovery output must include \
+a bioelectric schematic and a validation path.
 
 Output rules:
-- Structured, stepwise output.
-- No motivational language. No generic explanations.
-- Separate EVIDENCE (directly from sources), INFERENCE (logical derivation), \
-and SPECULATION (hypotheses beyond evidence) using labeled sections.
-- Be explicit about uncertainty.
-- Cite source numbers [1], [2], etc. for every factual claim.
+- Structured, stepwise output. No motivational language. No generic explanations.
+- Separate EVIDENCE (from sources), INFERENCE (logical derivation), and \
+SPECULATION (hypotheses beyond evidence) using labeled sections.
+- Be explicit about uncertainty. State what the sources do NOT address.
+- Cite [1], [2], etc. for every factual claim.
+- For every hypothesis, state: Prior Confidence (low/medium/high based on evidence \
+density), Predicted Impact (what changes if true), and key Assumptions.
+- Cross-species reasoning is a priority: findings in planaria should be compared to \
+Xenopus and mammalian systems whenever possible.
 - You are a research engine, not a chatbot.
 
 Constraints:
-- Do not output diagnosis or treatment advice.
+- Do not output diagnosis or treatment advice. This is a research instrument.
 - Prefer public, de-identified data.
-- If sources are insufficient, state so directly."""
+- If sources are insufficient, state so directly and identify what data is missing.
+- Before answering any scientific question, internally verify: have the retrieved \
+sources been consulted? Is the reasoning traceable to evidence?"""
 
 QUERY_TEMPLATE = """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
@@ -71,13 +87,28 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 
 Query: {query}
 
-Respond with the following structure:
-1. EVIDENCE — statements directly supported by the sources above (cite each)
-2. INFERENCE — logical derivations from the evidence (cite supporting sources)
-3. SPECULATION — hypotheses or connections not directly stated in sources (label confidence)
-4. UNCERTAINTY — what the sources do not address or where data is insufficient
+Respond with the following mandatory structure:
 
-Use [1], [2], etc. for inline citations."""
+EVIDENCE
+- Statements directly supported by the sources above (cite each with [1], [2], etc.)
+
+INFERENCE
+- Logical derivations from the evidence (cite supporting sources)
+
+SPECULATION
+- Hypotheses or connections not directly stated in sources
+- For each, state confidence level (low/medium/high)
+
+BIOELECTRIC SCHEMATIC
+- Describe the hypothesized bioelectric circuit relevant to the query
+- Example format: "Hyperpolarization of tissue X alters Gj, leading to suppression \
+of pathway Y and morphological outcome Z"
+- If insufficient data, state what is missing
+
+UNCERTAINTY
+- What the sources do not address
+- Where data is insufficient
+- Conflicting findings between sources"""
 
 DISCOVERY_TEMPLATE = """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
@@ -88,26 +119,56 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 
 Research query: {query}
 
-Execute the discovery loop:
+Execute the discovery loop with ALL of the following mandatory sections:
 
-1. EVIDENCE EXTRACTION — key findings directly from the sources (cite each)
-2. VARIABLE EXTRACTION — structured variables: organism, cell type, ion channels, \
-voltage ranges, gradients, interventions, outcomes. Format as name=value (unit) [source].
-3. PATTERN COMPARISON — compare findings across sources. Note agreements, conflicts, gaps.
-4. HYPOTHESES — generate testable hypotheses from the patterns. \
-State confidence (low/medium/high) based on evidence density.
-5. VALIDATION STRATEGIES — propose low-cost ways to test each hypothesis \
-(datasets, simulations, re-analysis of existing data).
-6. UNCERTAINTY — explicit gaps, missing variables, conflicting evidence.
+1. EVIDENCE EXTRACTION
+Key findings directly from the sources. Cite each with [1], [2], etc.
 
-Be precise. No filler."""
+2. VARIABLE EXTRACTION
+Structured bioelectric variables. Format each as name=value (unit) [source].
+Prioritize: Vmem (membrane voltage), EF (electric fields), Gj (gap junctional \
+conductance), ion channel types (K+, Na+, Ca2+, Cl-), perturbations, outcomes.
+Include organism and cell type context for each variable.
+
+3. PATTERN COMPARISON
+Compare findings across sources and across species (Planaria <-> Xenopus <-> Mammalian).
+Note agreements, conflicts, and gaps. Identify conserved bioelectric mechanisms.
+
+4. HYPOTHESES
+Generate testable hypotheses from the patterns. For each hypothesis state:
+- Prior Confidence: low/medium/high (based on evidence density)
+- Predicted Impact: what changes in our understanding if this is true
+- Assumptions: what must hold for this hypothesis to be valid
+- Supporting references: [1], [2], etc.
+
+5. BIOELECTRIC SCHEMATIC
+Describe the hypothesized bioelectric circuit in a structured format:
+"[Trigger] -> [Bioelectric change (Vmem/EF/Gj)] -> [Downstream pathway] -> [Outcome]"
+If multiple circuits are relevant, describe each. State which components are \
+evidenced vs. hypothesized.
+
+6. VALIDATION PATH
+Propose specific, low-cost ways to test the hypotheses:
+- Re-analysis of existing datasets
+- Computational simulations
+- Targeted experimental designs
+- Cross-species comparison strategies
+
+7. CROSS-SPECIES NOTES
+Compare findings across species. Where does the evidence transfer? Where are gaps?
+
+8. UNCERTAINTY
+Explicit gaps, missing variables, conflicting evidence, and what data would resolve them.
+
+Be precise. No filler. Every claim must trace to a source number."""
 
 
 class RAGPipeline:
-    """End-to-end RAG implementing the three-layer research architecture.
+    """End-to-end RAG implementing the Nexus three-layer research architecture.
 
     Standard mode: retrieve → assemble context → generate structured response
-    Discovery mode: retrieve → extract variables → compare → hypothesize → log
+    Discovery mode (DEFAULT): retrieve → extract variables → compare →
+      hypothesize → build bioelectric schematic → propose validation → log
     """
 
     def __init__(
@@ -168,7 +229,9 @@ class RAGPipeline:
         raw_answer = self._generate(user_prompt)
 
         # Parse structured sections from the response
-        evidence, inference, speculation = self._parse_epistemic_sections(raw_answer)
+        evidence, inference, speculation, schematic = self._parse_epistemic_sections(
+            raw_answer
+        )
 
         return RAGResponse(
             query=question,
@@ -179,6 +242,7 @@ class RAGPipeline:
             evidence_statements=evidence,
             inference_statements=inference,
             speculation_statements=speculation,
+            bioelectric_schematic=schematic,
         )
 
     # ------------------------------------------------------------------
@@ -305,11 +369,17 @@ class RAGPipeline:
     # Internal — parsing structured output
     # ------------------------------------------------------------------
     @staticmethod
-    def _parse_epistemic_sections(text: str) -> tuple[list[str], list[str], list[str]]:
-        """Parse EVIDENCE / INFERENCE / SPECULATION sections from LLM output."""
+    def _parse_epistemic_sections(
+        text: str,
+    ) -> tuple[list[str], list[str], list[str], str]:
+        """Parse EVIDENCE / INFERENCE / SPECULATION / BIOELECTRIC SCHEMATIC from LLM output.
+
+        Returns (evidence, inference, speculation, bioelectric_schematic).
+        """
         evidence: list[str] = []
         inference: list[str] = []
         speculation: list[str] = []
+        schematic_lines: list[str] = []
 
         current: list[str] | None = None
 
@@ -320,28 +390,46 @@ class RAGPipeline:
 
             upper = stripped.upper()
             if any(marker in upper for marker in ["EVIDENCE", "## EVIDENCE", "**EVIDENCE"]):
-                current = evidence
-                continue
-            elif any(marker in upper for marker in ["INFERENCE", "## INFERENCE", "**INFERENCE"]):
+                if "EXTRACTION" not in upper:
+                    current = evidence
+                    continue
+            if any(marker in upper for marker in ["INFERENCE", "## INFERENCE", "**INFERENCE"]):
                 current = inference
                 continue
-            elif any(
+            if any(
                 marker in upper
                 for marker in ["SPECULATION", "## SPECULATION", "**SPECULATION"]
             ):
                 current = speculation
                 continue
-            elif any(
+            if any(
                 marker in upper
-                for marker in ["UNCERTAINTY", "## UNCERTAINTY", "**UNCERTAINTY"]
+                for marker in [
+                    "BIOELECTRIC SCHEMATIC",
+                    "## BIOELECTRIC",
+                    "**BIOELECTRIC",
+                ]
             ):
-                current = None  # uncertainty is captured in the raw answer
+                current = schematic_lines
+                continue
+            if any(
+                marker in upper
+                for marker in [
+                    "UNCERTAINTY",
+                    "## UNCERTAINTY",
+                    "**UNCERTAINTY",
+                    "VALIDATION",
+                    "## VALIDATION",
+                ]
+            ):
+                current = None  # captured in raw answer
                 continue
 
             if current is not None and stripped.lstrip("- "):
                 current.append(stripped.lstrip("- "))
 
-        return evidence, inference, speculation
+        schematic = "\n".join(schematic_lines) if schematic_lines else ""
+        return evidence, inference, speculation, schematic
 
     @staticmethod
     def _parse_discovery_output(
@@ -357,6 +445,9 @@ class RAGPipeline:
         variables: list[StructuredVariable] = []
         hypotheses: list[Hypothesis] = []
         uncertainty: list[str] = []
+        schematic_lines: list[str] = []
+        validation_path: list[str] = []
+        cross_species: list[str] = []
 
         current_section = ""
 
@@ -380,10 +471,28 @@ class RAGPipeline:
             elif any(m in upper for m in ["HYPOTHES", "4. HYPOTHES"]):
                 current_section = "hypotheses"
                 continue
-            elif any(m in upper for m in ["VALIDATION", "5. VALIDATION"]):
+            elif any(
+                m in upper
+                for m in ["BIOELECTRIC SCHEMATIC", "5. BIOELECTRIC", "## BIOELECTRIC"]
+            ):
+                current_section = "schematic"
+                continue
+            elif any(
+                m in upper
+                for m in ["VALIDATION PATH", "6. VALIDATION", "VALIDATION STRATEG"]
+            ):
                 current_section = "validation"
                 continue
-            elif any(m in upper for m in ["UNCERTAINTY", "6. UNCERTAINTY"]):
+            elif any(
+                m in upper
+                for m in ["CROSS-SPECIES", "CROSS SPECIES", "7. CROSS"]
+            ):
+                current_section = "cross_species"
+                continue
+            elif any(
+                m in upper
+                for m in ["UNCERTAINTY", "8. UNCERTAINTY", "## UNCERTAINTY"]
+            ):
                 current_section = "uncertainty"
                 continue
 
@@ -407,11 +516,12 @@ class RAGPipeline:
                     hypotheses.append(hyp)
                 else:
                     speculation.append(content)
+            elif current_section == "schematic":
+                schematic_lines.append(content)
             elif current_section == "validation":
-                if hypotheses:
-                    hypotheses[-1].validation_strategy = content
-                else:
-                    speculation.append(f"Validation: {content}")
+                validation_path.append(content)
+            elif current_section == "cross_species":
+                cross_species.append(content)
             elif current_section == "uncertainty":
                 uncertainty.append(content)
 
@@ -423,6 +533,9 @@ class RAGPipeline:
             speculation=speculation,
             variables=variables,
             hypotheses=hypotheses,
+            bioelectric_schematic="\n".join(schematic_lines),
+            validation_path=validation_path,
+            cross_species_notes=cross_species,
             sources=sources,
             model_used=settings.llm_model,
             total_chunks_searched=total_searched,
@@ -468,23 +581,41 @@ def _try_parse_variable(text: str) -> StructuredVariable | None:
 
 
 def _try_parse_hypothesis(text: str) -> Hypothesis | None:
-    """Attempt to parse a hypothesis with optional confidence tag."""
+    """Attempt to parse a hypothesis with optional confidence, predicted impact, assumptions."""
     if len(text) < 10:
         return None
 
     confidence = "low"
     lower = text.lower()
-    if "high confidence" in lower or "(high)" in lower:
+    if "high confidence" in lower or "(high)" in lower or "prior confidence: high" in lower:
         confidence = "high"
-    elif "medium confidence" in lower or "(medium)" in lower:
+    elif "medium confidence" in lower or "(medium)" in lower or "prior confidence: medium" in lower:
         confidence = "medium"
 
     refs = []
     for match in re.finditer(r"\[(\d+)\]", text):
         refs.append(match.group(0))
 
+    # Try to extract predicted impact if present
+    predicted_impact = ""
+    impact_match = re.search(
+        r"predicted impact[:\s]+(.+?)(?:\.|$)", text, re.IGNORECASE
+    )
+    if impact_match:
+        predicted_impact = impact_match.group(1).strip()
+
+    # Try to extract assumptions if present
+    assumptions: list[str] = []
+    assumption_match = re.search(
+        r"assumption[s]?[:\s]+(.+?)(?:\.|$)", text, re.IGNORECASE
+    )
+    if assumption_match:
+        assumptions = [a.strip() for a in assumption_match.group(1).split(";") if a.strip()]
+
     return Hypothesis(
         statement=text,
         supporting_refs=refs,
         confidence=confidence,
+        predicted_impact=predicted_impact,
+        assumptions=assumptions,
     )

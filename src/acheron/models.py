@@ -126,21 +126,36 @@ class QueryResult(BaseModel):
 
 
 class StructuredVariable(BaseModel):
-    """A variable extracted from source material during the discovery loop."""
+    """A variable extracted from source material during the discovery loop.
+
+    Covers the core bioelectric variables: Vmem (membrane voltage),
+    EF (endogenous electric fields), Gj (gap junctional conductance),
+    ion channel types (K+, Na+, Ca2+, Cl-), perturbations, and outcomes.
+    """
 
     name: str
     value: str = ""
     unit: str = ""
     context: str = ""
     source_ref: str = ""
+    variable_type: str = ""  # vmem, ef, gj, ion_channel, perturbation, outcome, other
 
 
 class Hypothesis(BaseModel):
-    """A testable hypothesis generated from pattern comparison."""
+    """A testable hypothesis generated from pattern comparison.
+
+    Includes prior confidence (based on evidence density), predicted impact
+    (what changes if true), and clear assumptions.
+    """
 
     statement: str
     supporting_refs: list[str] = Field(default_factory=list)
     confidence: str = "low"  # low, medium, high — based on evidence density
+    predicted_impact: str = ""  # what changes in our understanding if this is true
+    assumptions: list[str] = Field(
+        default_factory=list,
+        description="Assumptions underlying this hypothesis",
+    )
     validation_strategy: str = ""
 
 
@@ -148,7 +163,8 @@ class DiscoveryResult(BaseModel):
     """Structured output from the discovery loop.
 
     Separates evidence (from sources), inference (logical derivation),
-    and speculation (hypotheses beyond direct evidence).
+    and speculation (hypotheses beyond direct evidence). Includes
+    bioelectric schematic and validation path as mandatory sections.
     """
 
     query: str
@@ -172,6 +188,20 @@ class DiscoveryResult(BaseModel):
         default_factory=list,
         description="Testable hypotheses generated from pattern comparison",
     )
+    bioelectric_schematic: str = Field(
+        default="",
+        description="Hypothesized bioelectric circuit description, e.g. "
+        "'Hyperpolarization of tissue X alters Gj, leading to "
+        "suppression of pathway Y and morphological outcome Z'",
+    )
+    validation_path: list[str] = Field(
+        default_factory=list,
+        description="Proposed experimental or computational validation steps",
+    )
+    cross_species_notes: list[str] = Field(
+        default_factory=list,
+        description="Cross-species reasoning (Planaria <-> Xenopus <-> Mammalian)",
+    )
     sources: list[QueryResult] = Field(default_factory=list)
     model_used: str = ""
     total_chunks_searched: int = 0
@@ -193,6 +223,7 @@ class RAGResponse(BaseModel):
     evidence_statements: list[str] = Field(default_factory=list)
     inference_statements: list[str] = Field(default_factory=list)
     speculation_statements: list[str] = Field(default_factory=list)
+    bioelectric_schematic: str = ""
 
     def format_full(self) -> str:
         """Format the response with inline citations for display."""

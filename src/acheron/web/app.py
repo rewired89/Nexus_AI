@@ -61,6 +61,7 @@ class QueryResponse(BaseModel):
     evidence: list[str] = []
     inference: list[str] = []
     speculation: list[str] = []
+    bioelectric_schematic: str = ""
 
 
 class DiscoverResponse(BaseModel):
@@ -69,6 +70,9 @@ class DiscoverResponse(BaseModel):
     speculation: list[str]
     variables: list[dict]
     hypotheses: list[dict]
+    bioelectric_schematic: str = ""
+    validation_path: list[str] = []
+    cross_species_notes: list[str] = []
     uncertainty: list[str]
     sources: list[dict]
     model_used: str
@@ -144,6 +148,7 @@ async def api_query(req: QueryRequest):
         evidence=response.evidence_statements,
         inference=response.inference_statements,
         speculation=response.speculation_statements,
+        bioelectric_schematic=response.bioelectric_schematic,
     )
 
 
@@ -166,18 +171,29 @@ async def api_discover(req: QueryRequest):
         inference=result.inference,
         speculation=result.speculation,
         variables=[
-            {"name": v.name, "value": v.value, "unit": v.unit, "source_ref": v.source_ref}
+            {
+                "name": v.name,
+                "value": v.value,
+                "unit": v.unit,
+                "type": v.variable_type,
+                "source_ref": v.source_ref,
+            }
             for v in result.variables
         ],
         hypotheses=[
             {
                 "statement": h.statement,
                 "confidence": h.confidence,
+                "predicted_impact": h.predicted_impact,
+                "assumptions": h.assumptions,
                 "refs": h.supporting_refs,
                 "validation": h.validation_strategy,
             }
             for h in result.hypotheses
         ],
+        bioelectric_schematic=result.bioelectric_schematic,
+        validation_path=result.validation_path,
+        cross_species_notes=result.cross_species_notes,
         uncertainty=result.uncertainty_notes,
         sources=[
             {

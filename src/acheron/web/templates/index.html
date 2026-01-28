@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus — Bioelectric Research Intelligence</title>
+    <title>Nexus — System-2 Bioelectric Research Engine</title>
     <style>
         :root {
             --bg: #0d1117;
@@ -146,6 +146,12 @@
         .section-box.variables h3 { color: var(--accent); }
         .section-box.hypotheses { border-left-color: var(--purple); }
         .section-box.hypotheses h3 { color: var(--purple); }
+        .section-box.schematic { border-left-color: #d2a8ff; }
+        .section-box.schematic h3 { color: #d2a8ff; }
+        .section-box.validation { border-left-color: var(--accent); }
+        .section-box.validation h3 { color: var(--accent); }
+        .section-box.crossspecies { border-left-color: #79c0ff; }
+        .section-box.crossspecies h3 { color: #79c0ff; }
 
         .section-box ul { list-style: none; padding: 0; }
         .section-box li { padding: 0.2rem 0; padding-left: 1rem; position: relative; }
@@ -223,11 +229,11 @@
     <div class="container">
         <header>
             <h1>NEXUS</h1>
-            <div class="subtitle">Bioelectric Research Intelligence</div>
+            <div class="subtitle">System-2 Bioelectric Research Engine</div>
             <div class="arch">
-                <span class="l1">LIBRARY</span> |
-                <span class="l2">INDEX</span> |
-                <span class="l3">COMPUTE</span>
+                <span class="l1">KNOWLEDGE</span> |
+                <span class="l2">SYNTHESIS</span> |
+                <span class="l3">DISCOVERY</span>
             </div>
         </header>
 
@@ -317,7 +323,7 @@
             const p = getParams();
             if (!p.question) return;
 
-            resultsDiv.innerHTML = '<div class="loading">Executing discovery loop (Compute layer)...</div>';
+            resultsDiv.innerHTML = '<div class="loading">Executing discovery loop (Discovery layer)...</div>';
             try {
                 const resp = await fetch('/api/discover', {
                     method: 'POST',
@@ -347,13 +353,17 @@
                 if (data.speculation && data.speculation.length) {
                     html += renderSection('speculation', 'SPECULATION', data.speculation);
                 }
+                if (data.bioelectric_schematic) {
+                    html += '<div class="section-box schematic"><h3>BIOELECTRIC SCHEMATIC</h3>' +
+                        '<pre style="white-space:pre-wrap;color:var(--text);">' + esc(data.bioelectric_schematic) + '</pre></div>';
+                }
             } else if (!retrieveOnly && data.answer) {
                 html += '<div class="answer-raw">' + esc(data.answer) + '</div>';
             }
 
             html += renderSources(data.sources);
             if (data.model_used) {
-                html += '<div class="meta-line">Compute: ' + esc(data.model_used) + ' | Index: ' + data.total_chunks_searched + ' chunks</div>';
+                html += '<div class="meta-line">Discovery: ' + esc(data.model_used) + ' | Synthesis: ' + data.total_chunks_searched + ' chunks</div>';
             }
 
             resultsDiv.innerHTML = html || '<div class="answer-raw">No results.</div>';
@@ -363,13 +373,13 @@
             let html = '';
 
             if (data.evidence && data.evidence.length) {
-                html += renderSection('evidence', '1. EVIDENCE', data.evidence);
+                html += renderSection('evidence', '1. EVIDENCE EXTRACTION', data.evidence);
             }
             if (data.variables && data.variables.length) {
-                html += '<div class="section-box variables"><h3>2. Extracted Variables</h3>' +
-                    '<table class="var-table"><tr><th>Name</th><th>Value</th><th>Unit</th><th>Src</th></tr>';
+                html += '<div class="section-box variables"><h3>2. BIOELECTRIC VARIABLES</h3>' +
+                    '<table class="var-table"><tr><th>Name</th><th>Value</th><th>Unit</th><th>Type</th><th>Src</th></tr>';
                 data.variables.forEach(function(v) {
-                    html += '<tr><td>' + esc(v.name) + '</td><td>' + esc(v.value) + '</td><td>' + esc(v.unit) + '</td><td>' + esc(v.source_ref) + '</td></tr>';
+                    html += '<tr><td>' + esc(v.name) + '</td><td>' + esc(v.value) + '</td><td>' + esc(v.unit) + '</td><td>' + esc(v.type || '') + '</td><td>' + esc(v.source_ref) + '</td></tr>';
                 });
                 html += '</table></div>';
             }
@@ -377,26 +387,40 @@
                 html += renderSection('inference', '3. PATTERN COMPARISON', data.inference);
             }
             if (data.hypotheses && data.hypotheses.length) {
-                html += '<div class="section-box hypotheses"><h3>4. Hypotheses</h3>';
+                html += '<div class="section-box hypotheses"><h3>4. HYPOTHESES</h3>';
                 data.hypotheses.forEach(function(h) {
                     var confClass = 'conf-' + (h.confidence || 'low');
                     html += '<div class="hyp-item">' +
                         '<div class="hyp-statement">' + esc(h.statement) + '</div>' +
-                        '<div class="hyp-meta">Confidence: <span class="' + confClass + '">' + esc(h.confidence) + '</span>' +
-                        (h.validation ? ' | Validation: ' + esc(h.validation) : '') + '</div>' +
+                        '<div class="hyp-meta">' +
+                        'Prior Confidence: <span class="' + confClass + '">' + esc(h.confidence) + '</span>' +
+                        (h.predicted_impact ? ' | Predicted Impact: ' + esc(h.predicted_impact) : '') +
+                        (h.validation ? ' | Validation: ' + esc(h.validation) : '') +
+                        '</div>' +
+                        (h.assumptions && h.assumptions.length ? '<div class="hyp-meta">Assumptions: ' + h.assumptions.map(esc).join('; ') + '</div>' : '') +
                     '</div>';
                 });
                 html += '</div>';
+            }
+            if (data.bioelectric_schematic) {
+                html += '<div class="section-box schematic"><h3>5. BIOELECTRIC SCHEMATIC</h3>' +
+                    '<pre style="white-space:pre-wrap;color:var(--text);">' + esc(data.bioelectric_schematic) + '</pre></div>';
+            }
+            if (data.validation_path && data.validation_path.length) {
+                html += renderSection('validation', '6. VALIDATION PATH', data.validation_path);
+            }
+            if (data.cross_species_notes && data.cross_species_notes.length) {
+                html += renderSection('crossspecies', '7. CROSS-SPECIES NOTES', data.cross_species_notes);
             }
             if (data.speculation && data.speculation.length) {
                 html += renderSection('speculation', 'SPECULATION', data.speculation);
             }
             if (data.uncertainty && data.uncertainty.length) {
-                html += renderSection('uncertainty', 'UNCERTAINTY', data.uncertainty);
+                html += renderSection('uncertainty', '8. UNCERTAINTY', data.uncertainty);
             }
 
             html += renderSources(data.sources);
-            html += '<div class="meta-line">Compute: ' + esc(data.model_used) + ' | Index: ' + data.total_chunks_searched + ' chunks | Logged to ledger</div>';
+            html += '<div class="meta-line">Discovery: ' + esc(data.model_used) + ' | Synthesis: ' + data.total_chunks_searched + ' chunks | Logged to ledger</div>';
 
             resultsDiv.innerHTML = html || '<div class="answer-raw">No results.</div>';
         }
@@ -409,7 +433,7 @@
 
         function renderSources(sources) {
             if (!sources || !sources.length) return '';
-            var html = '<div class="sources-box"><h3>Sources (Library) — ' + sources.length + '</h3>';
+            var html = '<div class="sources-box"><h3>Sources (Knowledge) — ' + sources.length + '</h3>';
             sources.forEach(function(s, i) {
                 var authors = Array.isArray(s.authors) ? s.authors.slice(0, 3).join(', ') : '';
                 var doi = s.doi ? ' | DOI: ' + s.doi : '';

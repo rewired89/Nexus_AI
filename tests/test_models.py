@@ -138,9 +138,16 @@ def test_structured_variable():
         unit="mV",
         context="planarian anterior",
         source_ref="[1]",
+        variable_type="vmem",
     )
     assert var.name == "Vmem"
     assert var.unit == "mV"
+    assert var.variable_type == "vmem"
+
+
+def test_structured_variable_default_type():
+    var = StructuredVariable(name="Gj", value="0.5", unit="nS")
+    assert var.variable_type == ""
 
 
 def test_hypothesis_model():
@@ -148,10 +155,21 @@ def test_hypothesis_model():
         statement="Depolarization triggers regeneration",
         supporting_refs=["[1]", "[3]"],
         confidence="high",
+        predicted_impact="Would confirm Vmem as master regulator of blastema formation",
+        assumptions=["Vmem is measurable in vivo", "No confounding chemical signals"],
         validation_strategy="Re-analyze existing voltage imaging data",
     )
     assert hyp.confidence == "high"
     assert len(hyp.supporting_refs) == 2
+    assert "master regulator" in hyp.predicted_impact
+    assert len(hyp.assumptions) == 2
+
+
+def test_hypothesis_defaults():
+    hyp = Hypothesis(statement="Test hypothesis")
+    assert hyp.confidence == "low"
+    assert hyp.predicted_impact == ""
+    assert hyp.assumptions == []
 
 
 def test_discovery_result():
@@ -171,6 +189,37 @@ def test_discovery_result():
     assert len(result.evidence) == 2
     assert len(result.hypotheses) == 1
     assert result.hypotheses[0].confidence == "medium"
+
+
+def test_discovery_result_new_fields():
+    result = DiscoveryResult(
+        query="gap junction role in planarian regeneration",
+        evidence=["Gj blockers impair head regeneration [1]"],
+        bioelectric_schematic=(
+            "Amputation -> Vmem depolarization at wound -> "
+            "Gj-mediated signal propagation -> Anterior gene activation -> "
+            "Head regeneration"
+        ),
+        validation_path=[
+            "Re-analyze existing Vmem imaging datasets",
+            "Simulate Gj network in computational model",
+        ],
+        cross_species_notes=[
+            "Planarian Gj (innexins) vs Xenopus Gj (connexins) — conserved role in patterning",
+        ],
+    )
+    assert "Amputation" in result.bioelectric_schematic
+    assert len(result.validation_path) == 2
+    assert len(result.cross_species_notes) == 1
+
+
+def test_rag_response_bioelectric_schematic():
+    response = RAGResponse(
+        query="test",
+        answer="test answer",
+        bioelectric_schematic="Vmem shift -> Gj change -> morphological outcome",
+    )
+    assert "Vmem shift" in response.bioelectric_schematic
 
 
 def test_ledger_entry():
