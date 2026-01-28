@@ -330,16 +330,28 @@ class RAGPipeline:
         return selected
 
     def _format_context(self, results: list[QueryResult]) -> str:
-        """Format retrieved passages into a numbered context block."""
+        """Format retrieved passages into a numbered context block.
+
+        Includes PMID/PMCID identifiers and evidence span locations
+        for precise citation tracing by the LLM.
+        """
         parts = []
         for i, r in enumerate(results, 1):
             author_str = ", ".join(r.authors[:3])
             if len(r.authors) > 3:
                 author_str += " et al."
             doi_str = f" DOI: {r.doi}" if r.doi else ""
-            header = f"[{i}] {author_str}. \"{r.paper_title}\".{doi_str}"
+            pmid_str = f" PMID:{r.pmid}" if r.pmid else ""
+            pmcid_str = f" PMCID:{r.pmcid}" if r.pmcid else ""
+            header = f"[{i}] {author_str}. \"{r.paper_title}\".{doi_str}{pmid_str}{pmcid_str}"
             section_note = f" (Section: {r.section})" if r.section else ""
-            parts.append(f"{header}{section_note}\n{r.text}")
+            # Include evidence span location if available
+            span_note = ""
+            if r.source_file and r.xpath:
+                span_note = f" [{r.source_file}#{r.xpath}]"
+            elif r.source_file and (r.span_start or r.span_end):
+                span_note = f" [{r.source_file}:{r.span_start}-{r.span_end}]"
+            parts.append(f"{header}{section_note}{span_note}\n{r.text}")
         return "\n\n".join(parts)
 
     # ------------------------------------------------------------------

@@ -31,6 +31,16 @@ class EpistemicTag(str, Enum):
 # ======================================================================
 # Paper models
 # ======================================================================
+class SourceProvenance(BaseModel):
+    """Provenance tracking for verification of ingested records."""
+
+    provider: str = ""  # e.g., "NCBI"
+    database: str = ""  # e.g., "pubmed", "pmc"
+    fetched_at_utc: str = ""
+    request_query: str = ""
+    url_used: str = ""
+
+
 class Paper(BaseModel):
     """Represents a single research paper with full metadata."""
 
@@ -53,6 +63,7 @@ class Paper(BaseModel):
     tables: list[TableData] = Field(default_factory=list)
     citation_count: Optional[int] = None
     collected_at: datetime = Field(default_factory=datetime.utcnow)
+    provenance: Optional[SourceProvenance] = None
 
     def display_citation(self) -> str:
         """Return a human-readable citation string."""

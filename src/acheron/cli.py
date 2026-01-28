@@ -162,7 +162,7 @@ def index(reindex: bool) -> None:
     """Build the Index layer from Library material."""
     from acheron.extraction.chunker import TextChunker
     from acheron.extraction.pdf_parser import PDFParser
-    from acheron.models import Paper
+    from acheron.models import Paper, PaperSection
     from acheron.vectorstore.store import VectorStore
 
     settings = get_settings()
@@ -176,9 +176,17 @@ def index(reindex: bool) -> None:
         return
 
     metadata_files = list(metadata_dir.glob("*.json"))
+    if not metadata_files:
+        console.print("[red]No JSON records in Library. Run 'acheron collect' first.[/]")
+        return
+
     console.print(f"Library contains {len(metadata_files)} paper records")
 
+    nxml_dir = settings.data_dir / "nxml"
     total_chunks = 0
+    papers_with_text = 0
+    papers_abstract_only = 0
+    papers_skipped = 0
 
     with Progress(
         SpinnerColumn(),
@@ -200,6 +208,23 @@ def index(reindex: bool) -> None:
                         paper.sections = parsed.sections
                         paper.tables = parsed.tables
 
+                # If still no sections, try loading NXML from nxml_dir
+                if not paper.sections and not paper.full_text and paper.pmcid and nxml_dir.exists():
+                    pmcid = paper.pmcid.upper()
+                    if not pmcid.startswith("PMC"):
+                        pmcid = f"PMC{pmcid}"
+                    nxml_path = nxml_dir / f"pmc_{pmcid}.nxml"
+                    if nxml_path.exists():
+                        paper = _load_nxml_into_paper(paper, nxml_path)
+
+                # Track what we have
+                if paper.sections or paper.full_text:
+                    papers_with_text += 1
+                elif paper.abstract:
+                    papers_abstract_only += 1
+                else:
+                    papers_skipped += 1
+
                 # Chunk and index
                 chunks = chunker.chunk_paper(paper)
                 if chunks:
@@ -215,6 +240,60 @@ def index(reindex: bool) -> None:
         f"\n[bold green]Index built: {total_chunks} new chunks. "
         f"Total in store: {store.count()}[/]"
     )
+    console.print(
+        f"  Full text: {papers_with_text} | "
+        f"Abstract only: {papers_abstract_only} | "
+        f"Skipped (no content): {papers_skipped}"
+    )
+    if total_chunks == 0 and store.count() == 0:
+        console.print(
+            "\n[yellow]0 chunks indexed. Possible causes:[/]\n"
+            "  - Papers have no abstract or full text\n"
+            "  - No PDFs downloaded and no PMC NXML available\n"
+            "  - JSON metadata files are empty or malformed\n"
+            "  Run 'acheron collect --source pubmed -t \"your topic\" -n 10' first"
+        )
+
+
+def _load_nxml_into_paper(paper, nxml_path: Path):
+    """Load NXML sections into a Paper that lacks full text."""
+    import xml.etree.ElementTree as ET
+    from acheron.models import PaperSection
+
+    try:
+        nxml_text = nxml_path.read_text(encoding="utf-8")
+        root = ET.fromstring(nxml_text)
+    except (ET.ParseError, OSError) as e:
+        logging.getLogger(__name__).debug("Failed to parse NXML %s: %s", nxml_path, e)
+        return paper
+
+    sections = []
+
+    # Try to extract body sections
+    for body in root.findall(".//body"):
+        for sec in body.findall(".//sec"):
+            title_el = sec.find("title")
+            heading = ""
+            if title_el is not None:
+                heading = "".join(title_el.itertext()).strip()
+
+            paragraphs = []
+            for p in sec.findall(".//p"):
+                text = "".join(p.itertext()).strip()
+                if text:
+                    paragraphs.append(text)
+
+            if paragraphs:
+                sections.append(PaperSection(
+                    heading=heading,
+                    text="\n\n".join(paragraphs),
+                ))
+
+    if sections:
+        paper.sections = sections
+        paper.full_text = "\n\n".join(s.text for s in sections if s.text)
+
+    return paper
 
 
 # ======================================================================

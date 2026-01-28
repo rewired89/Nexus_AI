@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 from acheron.collectors.base import BaseCollector
-from acheron.models import Paper, PaperSection, PaperSource
+from acheron.models import Paper, PaperSection, PaperSource, SourceProvenance
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +142,17 @@ class PubMedCollector(BaseCollector):
         elif record.year:
             pub_date = date(record.year, 1, 1)
 
+        # Convert nexus_ingest provenance to models.SourceProvenance
+        provenance = None
+        if record.provenance:
+            provenance = SourceProvenance(
+                provider=record.provenance.provider,
+                database=record.provenance.database,
+                fetched_at_utc=record.provenance.fetched_at_utc,
+                request_query=record.provenance.request_query,
+                url_used=record.provenance.url_used,
+            )
+
         return Paper(
             paper_id=paper_id,
             title=record.title,
@@ -157,6 +168,7 @@ class PubMedCollector(BaseCollector):
             url=url,
             full_text=full_text,
             sections=sections,
+            provenance=provenance,
         )
 
     # ------------------------------------------------------------------

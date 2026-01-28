@@ -426,7 +426,9 @@ class PMCPubMedFetcher:
         # Find body sections
         for body in root.findall(".//{http://www.ncbi.nlm.nih.gov/pmc}body") or root.findall(".//body"):
             for sec in body.findall(".//sec") or body.findall(".//{http://www.ncbi.nlm.nih.gov/pmc}sec"):
-                title_el = sec.find("title") or sec.find("{http://www.ncbi.nlm.nih.gov/pmc}title")
+                title_el = sec.find("title")
+                if title_el is None:
+                    title_el = sec.find("{http://www.ncbi.nlm.nih.gov/pmc}title")
                 heading = self._get_text(title_el) if title_el is not None else ""
 
                 # Collect all paragraph text in this section
