@@ -84,3 +84,51 @@ def test_chunk_metadata():
     chunks = chunker.chunk_paper(paper)
     assert chunks[0].metadata["doi"] == "10.1234/test"
     assert "Author One" in chunks[0].metadata["authors"]
+
+
+def test_chunk_evidence_spans():
+    """Test that chunks include evidence span fields."""
+    paper = _make_paper(
+        abstract="Bioelectric signals regulate regeneration. This is a key finding.",
+        pmid="12345",
+        pmcid="PMC67890",
+    )
+    chunker = TextChunker(min_chunk_size=1)
+    chunks = chunker.chunk_paper(paper)
+
+    assert len(chunks) >= 1
+    # Abstract chunk should have evidence spans
+    abstract_chunk = chunks[0]
+    assert abstract_chunk.section == "Abstract"
+    assert abstract_chunk.span_end > 0
+    assert abstract_chunk.excerpt
+    assert "Bioelectric" in abstract_chunk.excerpt
+    assert abstract_chunk.xpath == "abstract"
+
+
+def test_chunk_with_offsets():
+    """Test _chunk_text_with_offsets returns correct offsets."""
+    chunker = TextChunker(chunk_size=20, chunk_overlap=5, min_chunk_size=5)
+    text = "First sentence here. Second sentence there. Third sentence now."
+
+    chunks, offsets = chunker._chunk_text_with_offsets(text)
+
+    assert len(chunks) == len(offsets)
+    # Offsets should be valid ranges
+    for chunk, (start, end) in zip(chunks, offsets):
+        assert start >= 0
+        assert end >= start
+        assert end <= len(text)
+
+
+def test_chunk_excerpt_generation():
+    """Test that excerpt is generated for chunks."""
+    long_text = "This is a very long sentence that contains important information. " * 20
+    paper = _make_paper(abstract=long_text)
+    chunker = TextChunker(min_chunk_size=1)
+    chunks = chunker.chunk_paper(paper)
+
+    for chunk in chunks:
+        assert chunk.excerpt
+        # Excerpt should be shorter than 400 chars
+        assert len(chunk.excerpt) <= 400

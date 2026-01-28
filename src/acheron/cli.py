@@ -72,9 +72,23 @@ def main(verbose: bool) -> None:
 )
 @click.option("--topic", "-t", multiple=True, help="Custom search queries")
 @click.option("--max-results", "-n", default=50, help="Max papers per query per source")
+@click.option("--mindate", default=None, help="Minimum date filter (YYYY or YYYY/MM)")
+@click.option("--maxdate", default=None, help="Maximum date filter (YYYY or YYYY/MM)")
 @click.option("--download-pdfs", is_flag=True, help="Also download PDFs")
-def collect(source: str, topic: tuple, max_results: int, download_pdfs: bool) -> None:
-    """Collect papers into the Library from academic sources."""
+def collect(
+    source: str,
+    topic: tuple,
+    max_results: int,
+    mindate: str | None,
+    maxdate: str | None,
+    download_pdfs: bool,
+) -> None:
+    """Collect papers into the Library from academic sources.
+
+    Examples:
+        acheron collect --source pubmed -t "bioelectricity planarian" -n 25 --mindate 2015
+        acheron collect --source pubmed -t "ion channel voltage" --mindate 2020 --maxdate 2024
+    """
     from acheron.collectors.arxiv import ArxivCollector
     from acheron.collectors.biorxiv import BiorxivCollector
     from acheron.collectors.physionet import PhysioNetCollector
@@ -93,6 +107,7 @@ def collect(source: str, topic: tuple, max_results: int, download_pdfs: bool) ->
         collectors.append(("PhysioNet", PhysioNetCollector()))
 
     total_papers = 0
+    total_fulltext = 0
 
     with Progress(
         SpinnerColumn(),
@@ -105,20 +120,37 @@ def collect(source: str, topic: tuple, max_results: int, download_pdfs: bool) ->
                     f"[cyan]{coll_name}[/]: {query[:50]}...", total=None
                 )
                 try:
-                    papers = collector.search(query, max_results=max_results)
+                    # PubMed collector supports date filtering
+                    if isinstance(collector, PubMedCollector):
+                        papers = collector.search(
+                            query,
+                            max_results=max_results,
+                            mindate=mindate,
+                            maxdate=maxdate,
+                        )
+                    else:
+                        papers = collector.search(query, max_results=max_results)
+
                     for paper in papers:
                         collector.save_metadata(paper)
                         if download_pdfs and paper.url:
                             collector.download_pdf(paper)
+                        if paper.full_text:
+                            total_fulltext += 1
+
                     total_papers += len(papers)
                     progress.update(task, description=f"[green]{coll_name}[/]: {len(papers)} papers")
                 except Exception as e:
                     progress.update(task, description=f"[red]{coll_name}[/]: error — {e}")
+                    logging.getLogger(__name__).debug("Collection error: %s", e, exc_info=True)
                 finally:
                     progress.update(task, completed=True)
             collector.close()
 
-    console.print(f"\n[bold green]Library updated: {total_papers} papers collected.[/]")
+    console.print(
+        f"\n[bold green]Library updated: {total_papers} papers collected "
+        f"({total_fulltext} with full text).[/]"
+    )
 
 
 # ======================================================================

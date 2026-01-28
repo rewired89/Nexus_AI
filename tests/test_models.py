@@ -231,3 +231,67 @@ def test_ledger_entry():
     )
     assert entry.entry_id == "ledger-test-001"
     assert "planarian" in entry.tags
+
+
+# ======================================================================
+# Evidence span tests
+# ======================================================================
+from acheron.models import TextChunk
+
+
+def test_text_chunk_evidence_spans():
+    chunk = TextChunk(
+        chunk_id="test::0::abc123",
+        paper_id="pmid:12345",
+        text="Bioelectric signals regulate regeneration in planaria.",
+        section="Abstract",
+        source_file="pubmed_12345.json",
+        span_start=0,
+        span_end=54,
+        excerpt="Bioelectric signals regulate regeneration...",
+        xpath="abstract",
+    )
+    assert chunk.source_file == "pubmed_12345.json"
+    assert chunk.span_start == 0
+    assert chunk.span_end == 54
+    assert chunk.excerpt
+    assert chunk.xpath == "abstract"
+
+
+def test_query_result_evidence_spans():
+    result = QueryResult(
+        text="Vmem gradients control head regeneration in planaria.",
+        paper_id="pmid:67890",
+        paper_title="Bioelectric Control of Regeneration",
+        authors=["Levin M", "Adams DS"],
+        pmid="67890",
+        pmcid="PMC123456",
+        source_file="pmc_PMC123456.nxml",
+        span_start=1024,
+        span_end=1200,
+        excerpt="Vmem gradients control head regeneration...",
+        xpath="body/sec[@title='Results']",
+    )
+    assert result.pmid == "67890"
+    assert result.pmcid == "PMC123456"
+    assert result.source_file == "pmc_PMC123456.nxml"
+    assert result.xpath == "body/sec[@title='Results']"
+
+    # Test format_evidence_span
+    span_str = result.format_evidence_span()
+    assert "pmc_PMC123456.nxml" in span_str
+    assert "Results" in span_str
+
+
+def test_query_result_format_citation_with_pmid():
+    result = QueryResult(
+        text="Test text",
+        paper_id="pmid:12345",
+        paper_title="Test Paper",
+        authors=["Author A", "Author B"],
+        doi="10.1234/test",
+        pmid="12345",
+    )
+    citation = result.format_citation()
+    assert "PMID:12345" in citation
+    assert "DOI: 10.1234/test" in citation

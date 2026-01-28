@@ -1,15 +1,24 @@
-"""Collector for PubMed Central via NCBI E-Utilities."""
+"""Collector for PubMed Central via NCBI E-Utilities.
+
+Uses the nexus_ingest.pmc_pubmed module for verified ingestion with:
+  - Full metadata from PubMed esearch/efetch
+  - Full text NXML from PMC when available
+  - Provenance tracking for verification
+  - Evidence span support
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import xml.etree.ElementTree as ET
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 from acheron.collectors.base import BaseCollector
-from acheron.models import Paper, PaperSource
+from acheron.models import Paper, PaperSection, PaperSource
 
 logger = logging.getLogger(__name__)
 
@@ -19,18 +28,136 @@ PMC_PDF_URL = "https://www.ncbi.nlm.nih.gov/pmc/articles/{pmcid}/pdf/"
 
 
 class PubMedCollector(BaseCollector):
-    """Harvest papers from PubMed / PubMed Central."""
+    """Harvest papers from PubMed / PubMed Central.
+
+    Uses enhanced ingestion from nexus_ingest for PMC full text when available.
+    Saves raw NXML alongside JSON metadata for verification.
+    """
 
     source_name = "pubmed"
 
-    def search(self, query: str, max_results: int = 50) -> list[Paper]:
-        """Search PubMed and return enriched Paper objects."""
+    def search(
+        self,
+        query: str,
+        max_results: int = 50,
+        mindate: Optional[str] = None,
+        maxdate: Optional[str] = None,
+        use_enhanced: bool = True,
+    ) -> list[Paper]:
+        """Search PubMed and return enriched Paper objects.
+
+        Args:
+            query: PubMed search query
+            max_results: Maximum results to return
+            mindate: Minimum date (YYYY or YYYY/MM)
+            maxdate: Maximum date
+            use_enhanced: Use enhanced ingestion with PMC full text (default True)
+        """
+        if use_enhanced:
+            return self._search_enhanced(query, max_results, mindate, maxdate)
+
+        # Fallback to basic search
         ids = self._esearch(query, max_results)
         if not ids:
             logger.info("PubMed: no results for '%s'", query)
             return []
         logger.info("PubMed: fetching metadata for %d articles", len(ids))
         return self._efetch(ids)
+
+    def _search_enhanced(
+        self,
+        query: str,
+        max_results: int,
+        mindate: Optional[str] = None,
+        maxdate: Optional[str] = None,
+    ) -> list[Paper]:
+        """Enhanced search using nexus_ingest for PMC full text."""
+        try:
+            from nexus_ingest.pmc_pubmed import PMCPubMedFetcher, save_record_to_library
+        except ImportError:
+            logger.warning("nexus_ingest not available, falling back to basic search")
+            ids = self._esearch(query, max_results)
+            return self._efetch(ids) if ids else []
+
+        papers = []
+        nxml_dir = self.settings.data_dir / "nxml"
+        nxml_dir.mkdir(parents=True, exist_ok=True)
+
+        with PMCPubMedFetcher(
+            api_key=self.settings.ncbi_api_key,
+            email=getattr(self.settings, "ncbi_email", None),
+        ) as fetcher:
+            records = fetcher.search(
+                query,
+                retmax=max_results,
+                mindate=mindate,
+                maxdate=maxdate,
+            )
+
+            for record in records:
+                # Save raw NXML if available
+                nxml_path = None
+                if record.fulltext_nxml and record.pmcid:
+                    pmcid = record.pmcid.upper()
+                    if not pmcid.startswith("PMC"):
+                        pmcid = f"PMC{pmcid}"
+                    nxml_path = nxml_dir / f"pmc_{pmcid}.nxml"
+                    nxml_path.write_text(record.fulltext_nxml, encoding="utf-8")
+                    logger.debug("Saved NXML: %s", nxml_path.name)
+
+                # Convert to Paper model
+                paper = self._record_to_paper(record, nxml_path)
+                papers.append(paper)
+
+        logger.info(
+            "PubMed enhanced: %d papers (%d with full text)",
+            len(papers),
+            sum(1 for p in papers if p.full_text),
+        )
+        return papers
+
+    def _record_to_paper(self, record, nxml_path: Optional[Path] = None) -> Paper:
+        """Convert a PubMedRecord to a Paper model."""
+        # Build sections from NXML if available
+        sections = []
+        full_text = None
+        if record.fulltext_sections:
+            for sec in record.fulltext_sections:
+                sections.append(PaperSection(
+                    heading=sec.get("heading", ""),
+                    text=sec.get("text", ""),
+                ))
+            full_text = "\n\n".join(s.text for s in sections if s.text)
+
+        paper_id = record.doi if record.doi else f"pmid:{record.pmid}"
+        url = PMC_PDF_URL.format(pmcid=record.pmcid) if record.pmcid else ""
+
+        pub_date = None
+        if record.pub_date:
+            try:
+                parts = record.pub_date.split("-")
+                pub_date = date(int(parts[0]), int(parts[1]), int(parts[2]))
+            except (ValueError, IndexError):
+                pass
+        elif record.year:
+            pub_date = date(record.year, 1, 1)
+
+        return Paper(
+            paper_id=paper_id,
+            title=record.title,
+            authors=record.authors,
+            abstract=record.abstract,
+            publication_date=pub_date,
+            doi=record.doi,
+            pmid=record.pmid,
+            pmcid=record.pmcid,
+            source=PaperSource.PUBMED,
+            journal=record.journal,
+            keywords=record.keywords + record.mesh_terms,
+            url=url,
+            full_text=full_text,
+            sections=sections,
+        )
 
     # ------------------------------------------------------------------
     def _esearch(self, query: str, max_results: int) -> list[str]:

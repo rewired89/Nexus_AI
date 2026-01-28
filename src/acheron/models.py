@@ -93,7 +93,10 @@ class TableData(BaseModel):
 
 
 class TextChunk(BaseModel):
-    """A chunk of text ready for embedding and storage."""
+    """A chunk of text ready for embedding and storage.
+
+    Includes evidence span tracking for precise citations.
+    """
 
     chunk_id: str
     paper_id: str
@@ -101,28 +104,56 @@ class TextChunk(BaseModel):
     section: str = ""
     chunk_index: int = 0
     metadata: dict = Field(default_factory=dict)
+    # Evidence span fields for precise citations
+    source_file: str = ""
+    span_start: int = 0  # byte/char offset in source
+    span_end: int = 0
+    excerpt: str = ""  # short excerpt (200-400 chars) for display
+    xpath: str = ""  # location in structured document (e.g., NXML)
 
 
 # ======================================================================
 # Query and response models
 # ======================================================================
 class QueryResult(BaseModel):
-    """A single retrieval result with source attribution."""
+    """A single retrieval result with source attribution.
+
+    Includes evidence span for precise citations: file, offsets, excerpt.
+    """
 
     text: str
     paper_id: str
     paper_title: str
     authors: list[str] = Field(default_factory=list)
     doi: Optional[str] = None
+    pmid: Optional[str] = None
+    pmcid: Optional[str] = None
     section: str = ""
     relevance_score: float = 0.0
+    # Evidence span fields
+    source_file: str = ""
+    span_start: int = 0
+    span_end: int = 0
+    excerpt: str = ""  # short displayable excerpt
+    xpath: str = ""  # location in structured doc
 
     def format_citation(self) -> str:
         author_str = ", ".join(self.authors[:3])
         if len(self.authors) > 3:
             author_str += " et al."
         doi_part = f" (DOI: {self.doi})" if self.doi else ""
-        return f"[{author_str}. \"{self.paper_title}\"{doi_part}]"
+        pmid_part = f" PMID:{self.pmid}" if self.pmid else ""
+        return f"[{author_str}. \"{self.paper_title}\"{doi_part}{pmid_part}]"
+
+    def format_evidence_span(self) -> str:
+        """Format evidence span for display."""
+        loc = self.source_file or self.paper_id
+        if self.xpath:
+            loc = f"{loc}#{self.xpath}"
+        elif self.span_start or self.span_end:
+            loc = f"{loc}:{self.span_start}-{self.span_end}"
+        excerpt = self.excerpt or self.text[:200]
+        return f"{loc}\n  \"{excerpt}...\""
 
 
 class StructuredVariable(BaseModel):

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
 
     # NCBI / PubMed
     ncbi_api_key: str = Field(default="", alias="NCBI_API_KEY")
+    ncbi_email: str = Field(default="", alias="NCBI_EMAIL")
+    ncbi_tool: str = Field(default="AcheronNexus", alias="NCBI_TOOL")
 
     # Paths
     data_dir: Path = Field(default=_PROJECT_ROOT / "data", alias="ACHERON_DATA_DIR")

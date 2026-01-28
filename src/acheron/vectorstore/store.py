@@ -82,8 +82,16 @@ class VectorStore:
                         "title": c.metadata.get("title", ""),
                         "authors": json.dumps(c.metadata.get("authors", [])),
                         "doi": c.metadata.get("doi", ""),
+                        "pmid": c.metadata.get("pmid", ""),
+                        "pmcid": c.metadata.get("pmcid", ""),
                         "source": c.metadata.get("source", ""),
                         "date": c.metadata.get("date", ""),
+                        # Evidence span fields
+                        "source_file": c.source_file,
+                        "span_start": c.span_start,
+                        "span_end": c.span_end,
+                        "excerpt": c.excerpt[:500] if c.excerpt else "",
+                        "xpath": c.xpath,
                     }
                     for c in batch
                 ],
@@ -145,8 +153,16 @@ class VectorStore:
                 paper_title=meta.get("title", ""),
                 authors=authors if isinstance(authors, list) else [str(authors)],
                 doi=meta.get("doi", "") or None,
+                pmid=meta.get("pmid", "") or None,
+                pmcid=meta.get("pmcid", "") or None,
                 section=meta.get("section", ""),
                 relevance_score=relevance,
+                # Evidence span fields
+                source_file=meta.get("source_file", ""),
+                span_start=meta.get("span_start", 0),
+                span_end=meta.get("span_end", 0),
+                excerpt=meta.get("excerpt", ""),
+                xpath=meta.get("xpath", ""),
             ))
 
         return query_results
