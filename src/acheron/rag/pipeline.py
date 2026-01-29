@@ -17,8 +17,6 @@ import logging
 import re
 from typing import Optional
 
-from openai import OpenAI
-
 from acheron.config import get_settings
 from acheron.models import (
     DiscoveryResult,
@@ -27,6 +25,7 @@ from acheron.models import (
     RAGResponse,
     StructuredVariable,
 )
+from acheron.rag.compute import ComputeClient, ComputeUnavailableError
 from acheron.vectorstore.store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -181,16 +180,14 @@ class RAGPipeline:
         self.store = store or VectorStore()
         self.n_retrieve = n_retrieve
         self.n_context = n_context
-        self._llm_client: Optional[OpenAI] = None
+        self._compute: Optional[ComputeClient] = None
 
     @property
-    def llm(self) -> OpenAI:
-        if self._llm_client is None:
-            self._llm_client = OpenAI(
-                api_key=self.settings.llm_api_key or "not-set",
-                base_url=self.settings.llm_base_url,
-            )
-        return self._llm_client
+    def compute(self) -> ComputeClient:
+        """Lazy-initialised Compute client (OpenAI or Anthropic)."""
+        if self._compute is None:
+            self._compute = ComputeClient(self.settings)
+        return self._compute
 
     # ------------------------------------------------------------------
     # Standard query (Layer 1+2+3)
@@ -217,7 +214,7 @@ class RAGPipeline:
                 "The Library contains no material matching this query. "
                 "Add papers with 'acheron collect' or 'acheron add'.",
                 sources=[],
-                model_used=self.settings.llm_model,
+                model_used=self.settings.active_model,
             )
 
         # Select top context passages (source diversity)
@@ -237,7 +234,7 @@ class RAGPipeline:
             query=question,
             answer=raw_answer,
             sources=top_results,
-            model_used=self.settings.llm_model,
+            model_used=self.settings.active_model,
             total_chunks_searched=len(results),
             evidence_statements=evidence,
             inference_statements=inference,
@@ -275,7 +272,7 @@ class RAGPipeline:
                 query=question,
                 evidence=["No sources retrieved."],
                 uncertainty_notes=["Library contains no material for this query."],
-                model_used=self.settings.llm_model,
+                model_used=self.settings.active_model,
             )
 
         top_results = self._select_context(results)
@@ -358,18 +355,27 @@ class RAGPipeline:
     # Internal — LLM generation
     # ------------------------------------------------------------------
     def _generate(self, user_prompt: str, max_tokens: int = 2048) -> str:
-        """Call the LLM (Compute layer). Treats API calls as scarce."""
+        """Call the LLM (Compute layer). Treats API calls as scarce.
+
+        Dispatches to the active provider (OpenAI or Anthropic) via
+        ``ComputeClient``.  Returns a user-visible error string when
+        Compute is misconfigured rather than crashing.
+        """
         try:
-            response = self.llm.chat.completions.create(
-                model=self.settings.llm_model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.2,
+            return self.compute.generate(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=user_prompt,
                 max_tokens=max_tokens,
+                temperature=0.2,
             )
-            return response.choices[0].message.content or ""
+        except ComputeUnavailableError as exc:
+            logger.error("Compute unavailable: %s", exc)
+            return (
+                "Error: Compute layer unavailable. "
+                f"Provider '{self.settings.llm_provider}' is misconfigured. "
+                "Retrieval-only mode still works (acheron query -r). "
+                "Check your API key and provider settings."
+            )
         except Exception:
             logger.exception("LLM generation failed (Compute layer)")
             return (
@@ -549,7 +555,7 @@ class RAGPipeline:
             validation_path=validation_path,
             cross_species_notes=cross_species,
             sources=sources,
-            model_used=settings.llm_model,
+            model_used=settings.active_model,
             total_chunks_searched=total_searched,
             uncertainty_notes=uncertainty,
         )
