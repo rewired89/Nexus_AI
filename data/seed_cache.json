@@ -1,0 +1,51 @@
+{
+  "query": "planarian bioelectricity membrane voltage regeneration",
+  "fetched_via": "WebSearch fallback (NCBI E-Utilities blocked by proxy)",
+  "papers": [
+    {
+      "pmid": "N/A (IEEE)",
+      "title": "The Role of Bioelectrical Patterns in Regulative Morphogenesis: an Evolutionary Simulation and Validation in Planarian Regeneration",
+      "authors": ["Hansali S", "Pio-Lopez L", "Lapalme JV", "Levin M"],
+      "source": "IEEE Trans Mol Biol Multi-Scale Commun",
+      "pub_date": "2025",
+      "doi": "10.1109/TMBMC.2025.3575233",
+      "abstract": "Endogenous bioelectrical patterns are an important regulator of anatomical pattern during embryogenesis, regeneration, and cancer. While there are three known classes of instructive bioelectric patterns — directly encoding, indirectly encoding, and binary trigger — it is not known how these design principles could be exploited by evolution. To better understand the evolutionary role of bioelectricity in anatomical homeostasis, we developed a neural cellular automaton (NCA) and used evolutionary algorithms to optimize these models to achieve reliable morphogenetic patterns. Applying SSRI drugs to middle fragments of planarians resulted in a mix of 0-, 1-, and 2-headed regenerates. Compared to exclusively 1-headed animals in controls, cohorts treated with Sertraline or Fluoxetine exhibited 31% and 17% 0-headed animals respectively, demonstrating that serotonin reuptake inhibitors reduce the precision of bioelectric pattern regulation during regeneration. These results validate the computational model predictions and demonstrate that bioelectrical pattern encoding is an evolvable design principle in regulative morphogenesis."
+    },
+    {
+      "pmid": "39873662",
+      "title": "Bioelectricity is a universal multifaced signaling cue in living organisms",
+      "authors": ["Zhang GJ", "Levin M"],
+      "source": "Mol Biol Cell",
+      "pub_date": "2025 Feb 1",
+      "doi": "10.1091/mbc.E23-08-0312",
+      "abstract": "Cellular electrical signals have been extensively investigated in the neuromuscular system, but bioelectricity is now recognized as an ancient, intrinsic, fundamental property of all living cells beyond the neuromuscular system. Emerging evidence supports a view of bioelectricity as an instructional signaling cue for fundamental cellular physiology, embryonic development, regeneration, and human diseases including cancers. Bioelectricity can be utilized during embryonic development as a signal for patterning and differentiation, and remains critical in adults for homeostasis, regeneration, and diseases such as cancers. The overall cellular bioelectric status is an integration from multiple inputs of ion channels, pumps, gap junctions, and solute carriers, requiring the development of bioelectric simulator platforms and new conceptual frameworks. Measuring in vivo cellular bioelectric status is challenging, but newly developed tools such as optical probes, GEVIs, optogenetics, and chemogenetics can be adapted to bioelectricity research. Electroceuticals — pharmacological and optogenetic modalities that target tissue native bioelectric networks instead of specific molecular pathways — represent an exciting area of translational progress."
+    },
+    {
+      "pmid": "36403806",
+      "title": "Transplantation of fragments from different planaria: A bioelectrical model for head regeneration",
+      "authors": ["Cervera J", "Manzanares JA", "Levin M", "Mafe S"],
+      "source": "J Theor Biol",
+      "pub_date": "2023 Feb 7",
+      "doi": "10.1016/j.jtbi.2022.111356",
+      "abstract": "Head-tail planaria morphologies are influenced by the electric potential differences across the animal's primary axis, as evidenced by voltage-sensitive dyes and functional experiments that create permanent lines of 2-headed but genetically wild-type animals. However, bioelectrical and biochemical models that make predictions on what would happen in the case of spatial chimeras made by tissue transplantation from different planaria are lacking. We use a bioelectrical model to qualitatively describe the effects of tissue transplantation on the shape of the regenerated head. We assume that the cells may have distinct sets of ion channels and ascribe the system outcome to the axial distributions of average cell potentials over morphologically relevant regions. Our rationale is that the distributions of signaling ions and molecules are spatially coupled with multicellular electric potentials, and thus long-time downstream transcriptional events should be triggered by short-time bioelectrical processes. We show that relatively small differences between the ion channel characteristics of the cells could give noticeable changes in the electric potential profiles and the expected morphological deviations. Our approach is based on the observed relationships between bioelectrical regionalization and biochemical gradients in body-plan studies."
+    },
+    {
+      "pmid": "30799071",
+      "title": "The Role of Early Bioelectric Signals in the Regeneration of Planarian Anterior/Posterior Polarity",
+      "authors": ["Durant F", "Morokuma J", "Fields C", "Williams K", "Adams DS", "Levin M"],
+      "source": "Biophys J",
+      "pub_date": "2019 Mar 19",
+      "doi": "10.1016/j.bpj.2019.01.029",
+      "abstract": "Bioelectric signaling is increasingly recognized as a key component of pattern regulation during embryogenesis and regeneration. The transduction of endogenous bioelectric prepatterns into changes in gene expression, anatomy, and behavior has been documented in a range of model species. Planarian regeneration is an ideal system in which to study endogenous bioelectric signals, because of the remarkable capacity of these organisms to regenerate any body region along all axes from almost any fragment. We investigated the role of bioelectrical signaling during the first 6 hours of planarian anterior-posterior regeneration. Depolarization of injured tissue during the first 3 hours post-amputation by exposure to ionophores that manipulate membrane voltage altered gene expression by 6 hours postamputation. Trunk fragments exposed to the H,K-ATPase inhibitor SCH28080 or the ionophore monensin during only the first 3 hours of regeneration went on to form double-headed planaria. These data reveal that bioelectric signaling at 3 hours is crucial for the formation of proper anterior-posterior polarity, and that a primary functional role for resting membrane potential takes place within the first 3 hours after injury, kick-starting the downstream pattern of events that elaborate anatomy over the following 10 days."
+    },
+    {
+      "pmid": "23250205",
+      "title": "Bioelectric signaling regulates head and organ size during planarian regeneration",
+      "authors": ["Beane WS", "Morokuma J", "Lemire JM", "Levin M"],
+      "source": "Development",
+      "pub_date": "2013 Jan",
+      "doi": "10.1242/dev.086900",
+      "abstract": "Understanding the mechanisms by which organ and body structure size are regulated remains a fundamental open question. Here, we show that membrane voltage-dependent bioelectric signaling determines both head size and organ scaling during planarian regeneration. RNA interference of the H,K-ATPase ion pump results in membrane hyperpolarization, which produces regenerates with tiny 'shrunken' heads and proportionally oversized pharynges. These head-body proportions do not arise from changes in overall body plan size, nor do they result from abnormal patterning. The small heads contain correctly patterned brain tissue but fewer total cells, and the increased pharynx-to-body ratio is driven by a decrease in body cells rather than an increase in pharynx cells. This disproportionality results from a lack of the apoptosis required to adjust head and organ size during regeneration. We show that the size adjustment occurs at a specific time in regeneration and reveal the first molecular mechanism known to underlie the tight link between apoptosis and organ scaling. These data indicate that bioelectric signaling is a key mechanism establishing the proportions of head and organ size during regeneration."
+    }
+  ]
+}
