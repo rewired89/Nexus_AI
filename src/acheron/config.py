@@ -15,9 +15,10 @@ class Settings(BaseSettings):
     """Application-wide settings, populated from env vars or .env file."""
 
     # LLM
+    llm_provider: str = Field(default="anthropic", alias="ACHERON_LLM_PROVIDER")
     llm_api_key: str = Field(default="", alias="ACHERON_LLM_API_KEY")
-    llm_base_url: str = Field(default="https://api.openai.com/v1", alias="ACHERON_LLM_BASE_URL")
-    llm_model: str = Field(default="gpt-4o", alias="ACHERON_LLM_MODEL")
+    llm_base_url: str = Field(default="", alias="ACHERON_LLM_BASE_URL")
+    llm_model: str = Field(default="", alias="ACHERON_LLM_MODEL")
 
     # Embeddings
     embedding_api_key: str = Field(default="", alias="ACHERON_EMBEDDING_API_KEY")
@@ -47,6 +48,34 @@ class Settings(BaseSettings):
         "extra": "ignore",
         "populate_by_name": True,
     }
+
+    # Derived LLM settings (provider-aware defaults)
+    @property
+    def resolved_llm_api_key(self) -> str:
+        """Return the API key, falling back to provider-specific env vars."""
+        if self.llm_api_key:
+            return self.llm_api_key
+        if self.llm_provider == "anthropic":
+            return os.environ.get("ANTHROPIC_API_KEY", "")
+        return os.environ.get("OPENAI_API_KEY", "")
+
+    @property
+    def resolved_llm_model(self) -> str:
+        """Return the model, defaulting based on provider."""
+        if self.llm_model:
+            return self.llm_model
+        if self.llm_provider == "anthropic":
+            return "claude-sonnet-4-20250514"
+        return "gpt-4o"
+
+    @property
+    def resolved_llm_base_url(self) -> str:
+        """Return the base URL, defaulting based on provider."""
+        if self.llm_base_url:
+            return self.llm_base_url
+        if self.llm_provider == "anthropic":
+            return "https://api.anthropic.com"
+        return "https://api.openai.com/v1"
 
     # Derived paths
     @property

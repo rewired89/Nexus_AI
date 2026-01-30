@@ -7,10 +7,28 @@ from acheron.config import Settings, get_settings
 
 def test_default_settings():
     s = Settings()
-    assert s.llm_model == "gpt-4o"
+    assert s.llm_provider == "anthropic"
+    assert s.resolved_llm_model == "claude-sonnet-4-20250514"
     assert s.embedding_model == "all-MiniLM-L6-v2"
     assert s.port == 8000
     assert isinstance(s.data_dir, Path)
+
+
+def test_openai_provider_defaults():
+    s = Settings(llm_provider="openai")
+    assert s.resolved_llm_model == "gpt-4o"
+    assert s.resolved_llm_base_url == "https://api.openai.com/v1"
+
+
+def test_anthropic_provider_defaults():
+    s = Settings(llm_provider="anthropic")
+    assert s.resolved_llm_model == "claude-sonnet-4-20250514"
+    assert s.resolved_llm_base_url == "https://api.anthropic.com"
+
+
+def test_explicit_model_overrides_provider_default():
+    s = Settings(llm_provider="anthropic", llm_model="claude-3-haiku-20240307")
+    assert s.resolved_llm_model == "claude-3-haiku-20240307"
 
 
 def test_derived_paths():

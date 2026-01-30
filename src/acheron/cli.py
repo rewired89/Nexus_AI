@@ -785,7 +785,9 @@ def stats() -> None:
         f"  Vector store:     {settings.vectorstore_dir}\n"
         f"  Embedding model:  {settings.embedding_model}\n\n"
         f"[bold]Layer 3 — Discovery:[/]\n"
-        f"  LLM model:        {settings.llm_model}\n"
+        f"  LLM provider:     {settings.llm_provider}\n"
+        f"  LLM model:        {settings.resolved_llm_model}\n"
+        f"  API key:          {'configured' if settings.resolved_llm_api_key else 'NOT SET'}\n"
         f"  Ledger entries:   {ledger_count}",
         title="[bold cyan]Nexus Status[/]",
         border_style="cyan",

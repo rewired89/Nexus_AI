@@ -17,8 +17,6 @@ import logging
 import re
 from typing import Optional
 
-from openai import OpenAI
-
 from acheron.config import get_settings
 from acheron.models import (
     DiscoveryResult,
@@ -181,15 +179,33 @@ class RAGPipeline:
         self.store = store or VectorStore()
         self.n_retrieve = n_retrieve
         self.n_context = n_context
-        self._llm_client: Optional[OpenAI] = None
+        self._llm_client = None
+        self._provider: str = self.settings.llm_provider.lower()
 
-    @property
-    def llm(self) -> OpenAI:
-        if self._llm_client is None:
-            self._llm_client = OpenAI(
-                api_key=self.settings.llm_api_key or "not-set",
-                base_url=self.settings.llm_base_url,
+    def _get_client(self):
+        """Lazy-init the LLM client based on the configured provider."""
+        if self._llm_client is not None:
+            return self._llm_client
+
+        api_key = self.settings.resolved_llm_api_key
+        if not api_key:
+            raise RuntimeError(
+                f"No API key configured for provider '{self._provider}'. "
+                f"Set ACHERON_LLM_API_KEY or "
+                f"{'ANTHROPIC_API_KEY' if self._provider == 'anthropic' else 'OPENAI_API_KEY'} "
+                f"in your environment or .env file."
             )
+
+        if self._provider == "anthropic":
+            import anthropic
+
+            self._llm_client = anthropic.Anthropic(api_key=api_key)
+        else:
+            from openai import OpenAI
+
+            base_url = self.settings.resolved_llm_base_url
+            self._llm_client = OpenAI(api_key=api_key, base_url=base_url)
+
         return self._llm_client
 
     # ------------------------------------------------------------------
@@ -217,7 +233,7 @@ class RAGPipeline:
                 "The Library contains no material matching this query. "
                 "Add papers with 'acheron collect' or 'acheron add'.",
                 sources=[],
-                model_used=self.settings.llm_model,
+                model_used=self.settings.resolved_llm_model,
             )
 
         # Select top context passages (source diversity)
@@ -237,7 +253,7 @@ class RAGPipeline:
             query=question,
             answer=raw_answer,
             sources=top_results,
-            model_used=self.settings.llm_model,
+            model_used=self.settings.resolved_llm_model,
             total_chunks_searched=len(results),
             evidence_statements=evidence,
             inference_statements=inference,
@@ -275,7 +291,7 @@ class RAGPipeline:
                 query=question,
                 evidence=["No sources retrieved."],
                 uncertainty_notes=["Library contains no material for this query."],
-                model_used=self.settings.llm_model,
+                model_used=self.settings.resolved_llm_model,
             )
 
         top_results = self._select_context(results)
@@ -359,22 +375,46 @@ class RAGPipeline:
     # ------------------------------------------------------------------
     def _generate(self, user_prompt: str, max_tokens: int = 2048) -> str:
         """Call the LLM (Compute layer). Treats API calls as scarce."""
+        model = self.settings.resolved_llm_model
+
         try:
-            response = self.llm.chat.completions.create(
-                model=self.settings.llm_model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.2,
-                max_tokens=max_tokens,
-            )
-            return response.choices[0].message.content or ""
-        except Exception:
-            logger.exception("LLM generation failed (Compute layer)")
+            client = self._get_client()
+        except RuntimeError as exc:
+            logger.error("LLM client init failed: %s", exc)
             return (
-                "Error: Compute layer unavailable. "
-                "Check LLM API key and endpoint configuration."
+                f"Error: Compute layer unavailable. Provider '{self._provider}' is misconfigured.\n"
+                f"{exc}\n"
+                "Retrieval-only mode still works (acheron query -r)."
+            )
+
+        try:
+            if self._provider == "anthropic":
+                response = client.messages.create(
+                    model=model,
+                    system=SYSTEM_PROMPT,
+                    messages=[{"role": "user", "content": user_prompt}],
+                    temperature=0.2,
+                    max_tokens=max_tokens,
+                )
+                return response.content[0].text if response.content else ""
+            else:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.2,
+                    max_tokens=max_tokens,
+                )
+                return response.choices[0].message.content or ""
+        except Exception as exc:
+            logger.exception("LLM generation failed (Compute layer, provider=%s)", self._provider)
+            return (
+                f"Error: Compute layer unavailable. Provider '{self._provider}' is misconfigured.\n"
+                f"Retrieval-only mode still works (acheron query -r). "
+                f"Check your API key and provider settings.\n"
+                f"Detail: {exc}"
             )
 
     # ------------------------------------------------------------------
@@ -549,7 +589,7 @@ class RAGPipeline:
             validation_path=validation_path,
             cross_species_notes=cross_species,
             sources=sources,
-            model_used=settings.llm_model,
+            model_used=settings.resolved_llm_model,
             total_chunks_searched=total_searched,
             uncertainty_notes=uncertainty,
         )
