@@ -51,6 +51,8 @@ class QueryRequest(BaseModel):
     n_results: int = 10
     retrieve_only: bool = False
     discover_mode: bool = False
+    live: bool = False
+    mode: Optional[str] = None  # evidence, hypothesis, synthesis, or None for auto
 
 
 class QueryResponse(BaseModel):
@@ -209,6 +211,68 @@ async def api_discover(req: QueryRequest):
         model_used=result.model_used,
         total_chunks_searched=result.total_chunks_searched,
     )
+
+
+@app.post("/api/analyze")
+async def api_analyze(req: QueryRequest):
+    """Evidence-Bound Hypothesis Engine: evidence graph + IBE hypotheses + falsification."""
+    pipeline = get_pipeline()
+    result = pipeline.analyze(
+        req.question,
+        mode=req.mode,
+        live=req.live,
+        filter_source=req.source_filter,
+        n_results=req.n_results,
+    )
+    return {
+        "query": result.query,
+        "mode": result.mode.value,
+        "evidence_graph": {
+            "claims": [c.model_dump() for c in result.evidence_graph.claims],
+            "edges": [e.model_dump() for e in result.evidence_graph.edges],
+        },
+        "hypotheses": [
+            {
+                "id": h.hypothesis_id,
+                "rank": h.rank,
+                "statement": h.statement,
+                "overall_score": h.overall_score,
+                "explanatory_power": h.explanatory_power,
+                "simplicity": h.simplicity,
+                "consistency": h.consistency,
+                "mechanistic_plausibility": h.mechanistic_plausibility,
+                "rationale": h.rationale,
+                "predictions": h.predictions,
+                "falsifiers": h.falsifiers,
+                "minimal_test": h.minimal_test,
+                "confidence": h.confidence,
+                "confidence_justification": h.confidence_justification,
+                "assumptions": h.assumptions,
+                "known_unknowns": h.known_unknowns,
+                "failure_modes": h.failure_modes,
+                "refs": h.supporting_refs,
+            }
+            for h in result.hypotheses
+        ],
+        "next_queries": result.next_queries,
+        "confidence": result.confidence,
+        "confidence_justification": result.confidence_justification,
+        "uncertainty": result.uncertainty_notes,
+        "sources": [
+            {
+                "text": s.text[:500],
+                "paper_title": s.paper_title,
+                "authors": s.authors,
+                "doi": s.doi,
+                "section": s.section,
+                "score": s.relevance_score,
+            }
+            for s in result.sources
+        ],
+        "model_used": result.model_used,
+        "total_chunks_searched": result.total_chunks_searched,
+        "live_sources_fetched": result.live_sources_fetched,
+    }
 
 
 @app.get("/api/stats", response_model=StatsResponse)

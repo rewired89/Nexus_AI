@@ -15,7 +15,7 @@ def test_default_settings():
 
 
 def test_openai_provider_defaults():
-    s = Settings(llm_provider="openai")
+    s = Settings(llm_provider="openai", llm_model="", llm_base_url="")
     assert s.resolved_llm_model == "gpt-4o"
     assert s.resolved_llm_base_url == "https://api.openai.com/v1"
 

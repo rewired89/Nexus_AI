@@ -39,6 +39,24 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", alias="ACHERON_HOST")
     port: int = Field(default=8000, alias="ACHERON_PORT")
 
+    # Live retrieval thresholds
+    live_min_chunks: int = Field(
+        default=3, alias="ACHERON_LIVE_MIN_CHUNKS",
+        description="If local retrieval returns fewer chunks, trigger live fetch",
+    )
+    live_min_score: float = Field(
+        default=0.35, alias="ACHERON_LIVE_MIN_SCORE",
+        description="If best local relevance score is below this, trigger live fetch",
+    )
+    live_max_results: int = Field(
+        default=10, alias="ACHERON_LIVE_MAX_RESULTS",
+        description="Max papers to fetch per source during live retrieval",
+    )
+    live_persist_threshold: float = Field(
+        default=0.6, alias="ACHERON_LIVE_PERSIST_THRESHOLD",
+        description="Persist live-fetched papers with relevance above this score",
+    )
+
     # Logging
     log_level: str = Field(default="INFO", alias="ACHERON_LOG_LEVEL")
 

@@ -28,6 +28,23 @@ class EpistemicTag(str, Enum):
     SPECULATION = "speculation"
 
 
+class ClaimStatus(str, Enum):
+    """Verification status for an evidence claim."""
+
+    SUPPORTED = "supported"
+    MIXED = "mixed"
+    UNCLEAR = "unclear"
+    UNSUPPORTED = "unsupported"
+
+
+class NexusMode(str, Enum):
+    """Operating mode for the hypothesis engine."""
+
+    EVIDENCE = "evidence"  # MODE 1: evidence-grounded summary
+    HYPOTHESIS = "hypothesis"  # MODE 2: IBE hypothesis generation
+    SYNTHESIS = "synthesis"  # MODE 3: systems synthesis / design
+
+
 # ======================================================================
 # Paper models
 # ======================================================================
@@ -295,6 +312,126 @@ class LedgerEntry(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     notes: str = ""
     tags: list[str] = Field(default_factory=list)
+
+
+# ======================================================================
+# Evidence Graph (Knowledge Graph for claim verification)
+# ======================================================================
+class EvidenceClaim(BaseModel):
+    """An atomic claim extracted from source material (subject–predicate–object)."""
+
+    claim_id: str = ""
+    subject: str = ""
+    predicate: str = ""
+    object: str = ""
+    source_refs: list[str] = Field(default_factory=list)  # [1], [2], etc.
+    source_pmids: list[str] = Field(default_factory=list)
+    support_count: int = 0
+    contradiction_count: int = 0
+    agreement_score: float = 0.0  # 0.0–1.0
+    status: ClaimStatus = ClaimStatus.UNCLEAR
+    recency: str = ""  # year of most recent source
+    study_types: list[str] = Field(default_factory=list)  # review, primary, preprint
+
+
+class EvidenceEdge(BaseModel):
+    """A relationship between two claims in the evidence graph."""
+
+    source_claim: str = ""  # claim_id
+    target_claim: str = ""  # claim_id
+    relation: str = ""  # supports, contradicts, depends-on
+
+
+class EvidenceGraph(BaseModel):
+    """Lightweight evidence graph for structured claim tracking.
+
+    JSON-serializable so it can be logged to the ledger and reused across sessions.
+    """
+
+    claims: list[EvidenceClaim] = Field(default_factory=list)
+    edges: list[EvidenceEdge] = Field(default_factory=list)
+    query: str = ""
+    timestamp: str = ""
+
+    def supported_claims(self) -> list[EvidenceClaim]:
+        return [c for c in self.claims if c.status == ClaimStatus.SUPPORTED]
+
+    def contested_claims(self) -> list[EvidenceClaim]:
+        return [c for c in self.claims if c.status == ClaimStatus.MIXED]
+
+    def to_summary(self) -> str:
+        """Human-readable summary of the evidence graph."""
+        lines = [f"Evidence Graph ({len(self.claims)} claims, {len(self.edges)} edges)"]
+        for c in self.claims:
+            lines.append(
+                f"  [{c.status.value}] {c.subject} {c.predicate} {c.object} "
+                f"(agreement={c.agreement_score:.2f}, refs={c.source_refs})"
+            )
+        return "\n".join(lines)
+
+
+# ======================================================================
+# Ranked Hypothesis (IBE: Inference to the Best Explanation)
+# ======================================================================
+class RankedHypothesis(BaseModel):
+    """A hypothesis ranked using Inference to the Best Explanation (IBE).
+
+    Includes falsification-first output (Popper-style) and uncertainty calibration.
+    """
+
+    hypothesis_id: str = ""
+    statement: str = ""
+    rank: int = 0
+    # IBE scoring dimensions
+    explanatory_power: float = 0.0  # 0–1: how many supported claims does it explain
+    simplicity: float = 0.0  # 0–1: fewest extra assumptions
+    consistency: float = 0.0  # 0–1: avoids contradicting strong evidence
+    mechanistic_plausibility: float = 0.0  # 0–1: fits known biology/physics
+    overall_score: float = 0.0
+    rationale: str = ""
+    # Falsification-first output
+    predictions: list[str] = Field(
+        default_factory=list,
+        description="What would we expect to observe if true?",
+    )
+    falsifiers: list[str] = Field(
+        default_factory=list,
+        description="What result would falsify this?",
+    )
+    minimal_test: str = Field(
+        default="",
+        description="What minimal experiment or observation could test this?",
+    )
+    # Uncertainty calibration
+    confidence: int = Field(default=0, ge=0, le=100, description="Confidence score 0–100")
+    confidence_justification: str = ""
+    assumptions: list[str] = Field(default_factory=list)
+    known_unknowns: list[str] = Field(default_factory=list)
+    failure_modes: list[str] = Field(
+        default_factory=list,
+        description="Most likely failure modes of this hypothesis",
+    )
+    supporting_refs: list[str] = Field(default_factory=list)
+
+
+class HypothesisEngineResult(BaseModel):
+    """Full output from the Evidence-Bound Hypothesis Engine."""
+
+    query: str = ""
+    mode: NexusMode = NexusMode.EVIDENCE
+    evidence_graph: EvidenceGraph = Field(default_factory=EvidenceGraph)
+    hypotheses: list[RankedHypothesis] = Field(default_factory=list)
+    next_queries: list[str] = Field(
+        default_factory=list,
+        description="Recommended search queries for additional evidence",
+    )
+    confidence: int = Field(default=0, description="Overall confidence 0–100")
+    confidence_justification: str = ""
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    sources: list[QueryResult] = Field(default_factory=list)
+    model_used: str = ""
+    total_chunks_searched: int = 0
+    live_sources_fetched: int = 0
 
 
 # Forward-reference resolution

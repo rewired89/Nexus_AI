@@ -304,12 +304,14 @@ def _load_nxml_into_paper(paper, nxml_path: Path):
 @click.option("--source-filter", "-s", default=None, help="Filter by source")
 @click.option("--n-results", "-n", default=10, help="Number of passages to retrieve")
 @click.option("--retrieve-only", "-r", is_flag=True, help="Layer 2 only — no Compute")
+@click.option("--live", "-l", is_flag=True, help="Enable live retrieval from PubMed/bioRxiv/arXiv")
 @click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
 def query(
     question: str | None,
     source_filter: str | None,
     n_results: int,
     retrieve_only: bool,
+    live: bool,
     interactive: bool,
 ) -> None:
     """Query the research corpus (Index + Compute layers)."""
@@ -321,7 +323,10 @@ def query(
         _interactive_loop(pipeline, source_filter, n_results, retrieve_only)
         return
 
-    _run_query(pipeline, question, source_filter, n_results, retrieve_only)
+    if live and not retrieve_only:
+        _run_analyze(pipeline, question, source_filter, n_results, mode=None, live=True)
+    else:
+        _run_query(pipeline, question, source_filter, n_results, retrieve_only)
 
 
 def _interactive_loop(pipeline, source_filter, n_results, retrieve_only):
@@ -333,6 +338,8 @@ def _interactive_loop(pipeline, source_filter, n_results, retrieve_only):
             "Commands:\n"
             "  [dim]Type a question to query (Synthesis + Discovery)[/]\n"
             "  [dim]Prefix with[/] /discover [dim]to run the full discovery loop[/]\n"
+            "  [dim]Prefix with[/] /analyze [dim]for the hypothesis engine (IBE + falsification)[/]\n"
+            "  [dim]Prefix with[/] /live [dim]for live retrieval from PubMed/bioRxiv/arXiv[/]\n"
             "  [dim]Type[/] quit [dim]to exit[/]",
             title="Acheron Nexus",
             border_style="cyan",
@@ -349,6 +356,10 @@ def _interactive_loop(pipeline, source_filter, n_results, retrieve_only):
             continue
         if q.startswith("/discover "):
             _run_discover(pipeline, q[10:].strip(), source_filter, n_results)
+        elif q.startswith("/analyze "):
+            _run_analyze(pipeline, q[9:].strip(), source_filter, n_results, mode=None, live=False)
+        elif q.startswith("/live "):
+            _run_analyze(pipeline, q[6:].strip(), source_filter, n_results, mode=None, live=True)
         else:
             _run_query(pipeline, q, source_filter, n_results, retrieve_only)
 
@@ -621,6 +632,244 @@ def discover(
     # Log to ledger
     entry = ledger.record(result, notes=notes, tags=list(tag))
     console.print(f"\n[bold green]Recorded in experiment ledger:[/] {entry.entry_id}")
+
+
+# ======================================================================
+# ANALYZE — Evidence-Bound Hypothesis Engine
+# ======================================================================
+@main.command()
+@click.argument("question")
+@click.option("--source-filter", "-s", default=None, help="Filter by source")
+@click.option("--n-results", "-n", default=12, help="Number of passages to retrieve")
+@click.option("--live", "-l", is_flag=True, help="Enable live retrieval from PubMed/bioRxiv/arXiv")
+@click.option(
+    "--mode", "-m",
+    type=click.Choice(["evidence", "hypothesis", "synthesis", "auto"]),
+    default="auto",
+    help="Analysis mode (auto detects from query)",
+)
+@click.option("--tag", "-t", multiple=True, help="Tags for the ledger entry")
+@click.option("--notes", default="", help="Notes to attach to the ledger entry")
+def analyze(
+    question: str,
+    source_filter: str | None,
+    n_results: int,
+    live: bool,
+    mode: str,
+    tag: tuple,
+    notes: str,
+) -> None:
+    """Evidence-Bound Hypothesis Engine: evidence graph + IBE hypotheses + falsification.
+
+    Modes:
+      evidence   — summarize what is known with citations and agreement scores
+      hypothesis — generate ranked hypotheses using IBE + falsification
+      synthesis  — propose architectures/designs based on evidence + assumptions
+      auto       — detect mode from query text (default)
+
+    Examples:
+        acheron analyze "What role does Vmem play in planarian regeneration?"
+        acheron analyze --mode hypothesis "Why do planaria regenerate heads?"
+        acheron analyze --live "bioelectric control of morphogenesis"
+    """
+    from acheron.rag.pipeline import RAGPipeline
+
+    pipeline = RAGPipeline()
+    explicit_mode = mode if mode != "auto" else None
+
+    _run_analyze(pipeline, question, source_filter, n_results, explicit_mode, live)
+
+
+def _run_analyze(pipeline, question, source_filter, n_results, mode, live):
+    """Execute the Evidence-Bound Hypothesis Engine and display results."""
+    from acheron.rag.ledger import ExperimentLedger
+
+    with console.status("[bold cyan]Running Evidence-Bound Hypothesis Engine..."):
+        result = pipeline.analyze(
+            question,
+            mode=mode,
+            live=live,
+            filter_source=source_filter,
+            n_results=n_results,
+        )
+
+    _display_analysis_result(result)
+
+    # Log to ledger
+    ledger = ExperimentLedger()
+    # Convert to a DiscoveryResult-compatible format for ledger
+    from acheron.models import DiscoveryResult, Hypothesis
+
+    compat_hypotheses = []
+    for h in result.hypotheses:
+        compat_hypotheses.append(Hypothesis(
+            statement=h.statement,
+            supporting_refs=h.supporting_refs,
+            confidence=(
+                "high" if h.confidence >= 70
+                else "medium" if h.confidence >= 40
+                else "low"
+            ),
+            predicted_impact="; ".join(h.predictions[:2]) if h.predictions else "",
+            assumptions=h.assumptions,
+            validation_strategy=h.minimal_test,
+        ))
+
+    discovery_compat = DiscoveryResult(
+        query=result.query,
+        evidence=[
+            f"[{c.status.value}] {c.subject} {c.predicate} {c.object}"
+            for c in result.evidence_graph.claims
+        ],
+        hypotheses=compat_hypotheses,
+        sources=result.sources,
+        model_used=result.model_used,
+        total_chunks_searched=result.total_chunks_searched,
+        uncertainty_notes=result.uncertainty_notes,
+    )
+    entry = ledger.record(discovery_compat)
+    console.print(f"\n[bold green]Recorded in experiment ledger:[/] {entry.entry_id}")
+
+
+def _display_analysis_result(result):
+    """Display a HypothesisEngineResult with all structured fields."""
+    console.print()
+
+    # Mode indicator
+    mode_colors = {"evidence": "green", "hypothesis": "purple", "synthesis": "cyan"}
+    mode_color = mode_colors.get(result.mode.value, "white")
+    console.print(
+        f"[bold {mode_color}]MODE: {result.mode.value.upper()}[/{mode_color}]"
+        + (f" | Live sources: {result.live_sources_fetched}" if result.live_sources_fetched else "")
+    )
+
+    # Evidence Graph — Claims
+    if result.evidence_graph.claims:
+        claim_table = Table(
+            title="EVIDENCE CLAIMS (Knowledge Graph)", show_lines=True
+        )
+        claim_table.add_column("ID", width=4)
+        claim_table.add_column("Claim", max_width=50)
+        claim_table.add_column("Status", width=12)
+        claim_table.add_column("Agree", width=6, justify="right")
+        claim_table.add_column("Refs", width=15)
+
+        for c in result.evidence_graph.claims:
+            status_color = {
+                "supported": "green",
+                "mixed": "yellow",
+                "unclear": "dim",
+                "unsupported": "red",
+            }.get(c.status.value, "dim")
+            claim_text = f"{c.subject} {c.predicate} {c.object}".strip() or c.claim_id
+            claim_table.add_row(
+                c.claim_id,
+                claim_text[:50],
+                f"[{status_color}]{c.status.value}[/{status_color}]",
+                f"{c.agreement_score:.2f}",
+                ", ".join(c.source_refs[:4]),
+            )
+        console.print(claim_table)
+
+    # Evidence Graph — Edges
+    if result.evidence_graph.edges:
+        console.print(Panel(
+            "\n".join(
+                f"  {e.source_claim} [{e.relation}] {e.target_claim}"
+                for e in result.evidence_graph.edges
+            ),
+            title="[bold yellow]CLAIM RELATIONSHIPS[/]",
+            border_style="yellow",
+        ))
+
+    # Ranked Hypotheses with IBE scores + falsification
+    if result.hypotheses:
+        for h in result.hypotheses:
+            conf_color = "green" if h.confidence >= 70 else "yellow" if h.confidence >= 40 else "red"
+            content_lines = [
+                f"[bold]{h.statement}[/]",
+                "",
+                f"IBE Scores: explanatory={h.explanatory_power:.1f}  "
+                f"simplicity={h.simplicity:.1f}  "
+                f"consistency={h.consistency:.1f}  "
+                f"mechanistic={h.mechanistic_plausibility:.1f}  "
+                f"→ overall=[bold]{h.overall_score:.2f}[/]",
+            ]
+            if h.rationale:
+                content_lines.append(f"\nRationale: {h.rationale}")
+            if h.predictions:
+                content_lines.append("\n[green]Predictions (if true):[/]")
+                for p in h.predictions:
+                    content_lines.append(f"  - {p}")
+            if h.falsifiers:
+                content_lines.append("\n[red]Falsifiers (would disprove):[/]")
+                for f in h.falsifiers:
+                    content_lines.append(f"  - {f}")
+            if h.minimal_test:
+                content_lines.append(f"\n[cyan]Minimal test:[/] {h.minimal_test}")
+            if h.assumptions:
+                content_lines.append(f"\nAssumptions: {'; '.join(h.assumptions)}")
+            if h.known_unknowns:
+                content_lines.append(f"Known unknowns: {'; '.join(h.known_unknowns)}")
+            if h.failure_modes:
+                content_lines.append(f"Failure modes: {'; '.join(h.failure_modes)}")
+            if h.confidence_justification:
+                content_lines.append(f"Justification: {h.confidence_justification}")
+
+            console.print(Panel(
+                "\n".join(content_lines),
+                title=(
+                    f"[bold purple]{h.hypothesis_id} (rank #{h.rank}) — "
+                    f"Confidence: [{conf_color}]{h.confidence}/100[/{conf_color}][/]"
+                ),
+                border_style="purple",
+            ))
+
+    # Next queries
+    if result.next_queries:
+        console.print(Panel(
+            "\n".join(f"  - {q}" for q in result.next_queries),
+            title="[bold cyan]NEXT BEST EVIDENCE (search queries)[/]",
+            border_style="cyan",
+        ))
+
+    # Uncertainty
+    if result.uncertainty_notes:
+        console.print(Panel(
+            "\n".join(f"  - {n}" for n in result.uncertainty_notes),
+            title="[bold dim]UNCERTAINTY[/]",
+            border_style="dim",
+        ))
+
+    # Sources
+    console.print("\n[bold]Sources (Knowledge):[/]")
+    seen = set()
+    for i, src in enumerate(result.sources, 1):
+        if src.paper_id in seen:
+            continue
+        seen.add(src.paper_id)
+        doi_str = f" DOI: {src.doi}" if src.doi else ""
+        author_str = ", ".join(src.authors[:3])
+        if len(src.authors) > 3:
+            author_str += " et al."
+        console.print(
+            f"  [{i}] {author_str}. [italic]\"{src.paper_title}\"[/].{doi_str}"
+        )
+
+    # Footer
+    conf_color = (
+        "green" if result.confidence >= 70
+        else "yellow" if result.confidence >= 40
+        else "red"
+    )
+    console.print(
+        f"\n[dim]Mode: {result.mode.value} | "
+        f"Overall confidence: [{conf_color}]{result.confidence}/100[/{conf_color}] | "
+        f"Model: {result.model_used} | "
+        f"Chunks: {result.total_chunks_searched}"
+        + (f" | Live: {result.live_sources_fetched}" if result.live_sources_fetched else "")
+        + "[/]"
+    )
 
 
 # ======================================================================

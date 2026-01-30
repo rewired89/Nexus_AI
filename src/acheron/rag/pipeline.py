@@ -324,6 +324,160 @@ class RAGPipeline:
         )
 
     # ------------------------------------------------------------------
+    # Evidence-Bound Hypothesis Engine (MODE 1/2/3)
+    # ------------------------------------------------------------------
+    def analyze(
+        self,
+        question: str,
+        mode: Optional[str] = None,
+        live: bool = False,
+        filter_source: Optional[str] = None,
+        n_results: Optional[int] = None,
+    ):
+        """Run the Evidence-Bound Hypothesis Engine.
+
+        1. Retrieve from local vectorstore.
+        2. If evidence is weak and live=True (or auto), fetch from PubMed/bioRxiv/arXiv.
+        3. Detect mode (evidence / hypothesis / synthesis) from query or explicit param.
+        4. Generate structured output with evidence graph + ranked hypotheses.
+        5. Optionally persist high-relevance live papers.
+
+        Returns a HypothesisEngineResult.
+        """
+        from acheron.rag.hypothesis_engine import (
+            build_engine_result,
+            detect_mode,
+            get_mode_prompt,
+            get_mode_query_template,
+        )
+        from acheron.rag.live_retrieval import (
+            evidence_is_weak,
+            live_search,
+            persist_high_relevance,
+        )
+        from acheron.models import HypothesisEngineResult, NexusMode
+
+        n = n_results or self.n_retrieve
+        detected_mode = detect_mode(question, explicit_mode=mode)
+        logger.info("Analyze: mode=%s, live=%s", detected_mode.value, live)
+
+        # Layer 2 — retrieve from local store
+        results = self.store.search(
+            query=question, n_results=n, filter_source=filter_source
+        )
+        logger.info("Local retrieval: %d chunks", len(results))
+
+        live_count = 0
+
+        # Live retrieval: trigger if --live flag or evidence is weak
+        if live or evidence_is_weak(results):
+            logger.info("Triggering live retrieval for query: %s", question)
+            try:
+                live_results, live_papers, live_chunk_count = live_search(question)
+                live_count = live_chunk_count
+                # Merge live results with local results
+                results.extend(live_results)
+                logger.info(
+                    "Live retrieval added %d chunks from %d papers",
+                    live_chunk_count,
+                    len(live_papers),
+                )
+                # Persist high-relevance papers
+                if live_papers:
+                    persisted = persist_high_relevance(live_papers)
+                    if persisted:
+                        logger.info("Persisted %d live papers to Library", persisted)
+            except Exception as exc:
+                logger.warning("Live retrieval failed: %s", exc)
+
+        if not results:
+            return HypothesisEngineResult(
+                query=question,
+                mode=detected_mode,
+                uncertainty_notes=[
+                    "No sources retrieved from local index or live search.",
+                    "Add papers with 'acheron collect' or try --live flag.",
+                ],
+                model_used=self.settings.resolved_llm_model,
+            )
+
+        # If evidence is still weak after live fetch, auto-enter hypothesis mode
+        if detected_mode == NexusMode.EVIDENCE and evidence_is_weak(results):
+            detected_mode = NexusMode.HYPOTHESIS
+            logger.info("Auto-escalated to hypothesis mode due to weak evidence")
+
+        top_results = self._select_context(results)
+
+        # Layer 3 — Compute with mode-specific prompt
+        system_prompt = get_mode_prompt(detected_mode)
+        query_template = get_mode_query_template(detected_mode)
+        context_str = self._format_context(top_results)
+        user_prompt = query_template.format(context=context_str, query=question)
+
+        raw_output = self._generate_with_system(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=4000,
+        )
+
+        return build_engine_result(
+            raw_output=raw_output,
+            query=question,
+            mode=detected_mode,
+            sources=top_results,
+            total_searched=len(results),
+            model_used=self.settings.resolved_llm_model,
+            live_sources_fetched=live_count,
+        )
+
+    def _generate_with_system(
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 2048
+    ) -> str:
+        """Call the LLM with a custom system prompt (for mode-specific prompts)."""
+        model = self.settings.resolved_llm_model
+
+        try:
+            client = self._get_client()
+        except RuntimeError as exc:
+            logger.error("LLM client init failed: %s", exc)
+            return (
+                f"Error: Compute layer unavailable. Provider '{self._provider}' "
+                f"is misconfigured.\n{exc}\n"
+                "Retrieval-only mode still works (acheron query -r)."
+            )
+
+        try:
+            if self._provider == "anthropic":
+                response = client.messages.create(
+                    model=model,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                    temperature=0.2,
+                    max_tokens=max_tokens,
+                )
+                return response.content[0].text if response.content else ""
+            else:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.2,
+                    max_tokens=max_tokens,
+                )
+                return response.choices[0].message.content or ""
+        except Exception as exc:
+            logger.exception(
+                "LLM generation failed (Compute layer, provider=%s)", self._provider
+            )
+            return (
+                f"Error: Compute layer unavailable. Provider '{self._provider}' "
+                f"is misconfigured.\nRetrieval-only mode still works (acheron query -r). "
+                f"Check your API key and provider settings.\nDetail: {exc}"
+            )
+
+    # ------------------------------------------------------------------
     # Internal — context selection
     # ------------------------------------------------------------------
     def _select_context(self, results: list[QueryResult]) -> list[QueryResult]:
