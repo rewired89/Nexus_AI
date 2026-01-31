@@ -165,7 +165,7 @@ PREDICTIONS: Vmem values should differ systematically between anterior and poste
 FALSIFIERS: Finding no Vmem gradient across AP axis despite normal regeneration
 MINIMAL_TEST: Map Vmem using voltage-sensitive dyes across AP axis of amputated fragments
 CONFIDENCE: 72
-CONFIDENCE_JUSTIFICATION: Strong evidence from multiple species, but planarian-specific values missing
+CONFIDENCE_JUSTIFICATION: Strong evidence from multiple species, planarian-specific values missing
 ASSUMPTIONS: A1. Vmem is measured intracellularly; A2. Gap junctions relay positional info
 KNOWN_UNKNOWNS: Exact Vmem thresholds; downstream transcription targets
 FAILURE_MODES: Vmem may be a readout rather than a cause; other signals may dominate

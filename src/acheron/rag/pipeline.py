@@ -345,6 +345,7 @@ class RAGPipeline:
 
         Returns a HypothesisEngineResult.
         """
+        from acheron.models import HypothesisEngineResult, NexusMode
         from acheron.rag.hypothesis_engine import (
             build_engine_result,
             detect_mode,
@@ -356,7 +357,6 @@ class RAGPipeline:
             live_search,
             persist_high_relevance,
         )
-        from acheron.models import HypothesisEngineResult, NexusMode
 
         n = n_results or self.n_retrieve
         detected_mode = detect_mode(question, explicit_mode=mode)

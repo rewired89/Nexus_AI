@@ -9,7 +9,6 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import Optional
 
 from acheron.models import Paper, TextChunk
 
@@ -65,7 +64,10 @@ class TextChunker:
                     continue
                 section_chunks, offsets = self._chunk_text_with_offsets(section.text)
                 for text, (start, end) in zip(section_chunks, offsets):
-                    xpath = f"section[@heading='{section.heading}']" if section.heading else "section"
+                    if section.heading:
+                        xpath = f"section[@heading='{section.heading}']"
+                    else:
+                        xpath = "section"
                     chunks.append(self._make_chunk(
                         paper=paper,
                         text=text,
@@ -140,7 +142,6 @@ class TextChunker:
         offsets: list[tuple[int, int]] = []
         current_words: list[str] = []
         current_len = 0
-        current_start = 0
 
         # Track position in original text
         pos = 0
@@ -192,7 +193,10 @@ class TextChunker:
         # Final chunk
         if current_words and len(current_words) >= self.min_chunk_size:
             chunks.append(" ".join(current_words).strip())
-            start = sentence_positions[chunk_start_sent][0] if chunk_start_sent < len(sentence_positions) else 0
+            if chunk_start_sent < len(sentence_positions):
+                start = sentence_positions[chunk_start_sent][0]
+            else:
+                start = 0
             end = sentence_positions[-1][1] if sentence_positions else len(text)
             offsets.append((start, end))
 

@@ -9,7 +9,6 @@ Uses the nexus_ingest.pmc_pubmed module for verified ingestion with:
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 import xml.etree.ElementTree as ET
@@ -73,7 +72,7 @@ class PubMedCollector(BaseCollector):
     ) -> list[Paper]:
         """Enhanced search using nexus_ingest for PMC full text."""
         try:
-            from nexus_ingest.pmc_pubmed import PMCPubMedFetcher, save_record_to_library
+            from nexus_ingest.pmc_pubmed import PMCPubMedFetcher
         except ImportError:
             logger.warning("nexus_ingest not available, falling back to basic search")
             ids = self._esearch(query, max_results)

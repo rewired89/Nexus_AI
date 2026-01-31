@@ -6,9 +6,6 @@ without any network calls.
 
 import json
 import xml.etree.ElementTree as ET
-from pathlib import Path
-
-import pytest
 
 from nexus_ingest.pmc_pubmed import (
     PMCPubMedFetcher,
@@ -233,7 +230,11 @@ def test_parse_pubmed_article_missing_medline():
 def test_parse_pubmed_article_no_pmid():
     """Test parsing an article with no PMID."""
     fetcher = PMCPubMedFetcher.__new__(PMCPubMedFetcher)
-    xml = "<PubmedArticle><MedlineCitation><Article><ArticleTitle>Test</ArticleTitle></Article></MedlineCitation></PubmedArticle>"
+    xml = (
+        "<PubmedArticle><MedlineCitation><Article>"
+        "<ArticleTitle>Test</ArticleTitle>"
+        "</Article></MedlineCitation></PubmedArticle>"
+    )
     article_el = ET.fromstring(xml)
     result = fetcher._parse_pubmed_article(article_el, "test", "url")
     assert result is None

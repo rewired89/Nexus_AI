@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from acheron.config import get_settings
-from acheron.models import DiscoveryResult, Hypothesis, LedgerEntry, StructuredVariable
+from acheron.models import DiscoveryResult, LedgerEntry
 
 logger = logging.getLogger(__name__)
 

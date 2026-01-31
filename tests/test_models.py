@@ -14,6 +14,7 @@ from acheron.models import (
     RAGResponse,
     StructuredVariable,
     TableData,
+    TextChunk,
 )
 
 
@@ -236,7 +237,6 @@ def test_ledger_entry():
 # ======================================================================
 # Evidence span tests
 # ======================================================================
-from acheron.models import TextChunk
 
 
 def test_text_chunk_evidence_spans():

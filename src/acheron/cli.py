@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from pathlib import Path
 
 import click
@@ -139,7 +138,8 @@ def collect(
                             total_fulltext += 1
 
                     total_papers += len(papers)
-                    progress.update(task, description=f"[green]{coll_name}[/]: {len(papers)} papers")
+                    desc = f"[green]{coll_name}[/]: {len(papers)} papers"
+                    progress.update(task, description=desc)
                 except Exception as e:
                     progress.update(task, description=f"[red]{coll_name}[/]: error — {e}")
                     logging.getLogger(__name__).debug("Collection error: %s", e, exc_info=True)
@@ -162,7 +162,7 @@ def index(reindex: bool) -> None:
     """Build the Index layer from Library material."""
     from acheron.extraction.chunker import TextChunker
     from acheron.extraction.pdf_parser import PDFParser
-    from acheron.models import Paper, PaperSection
+    from acheron.models import Paper
     from acheron.vectorstore.store import VectorStore
 
     settings = get_settings()
@@ -258,6 +258,7 @@ def index(reindex: bool) -> None:
 def _load_nxml_into_paper(paper, nxml_path: Path):
     """Load NXML sections into a Paper that lacks full text."""
     import xml.etree.ElementTree as ET
+
     from acheron.models import PaperSection
 
     try:
@@ -338,7 +339,7 @@ def _interactive_loop(pipeline, source_filter, n_results, retrieve_only):
             "Commands:\n"
             "  [dim]Type a question to query (Synthesis + Discovery)[/]\n"
             "  [dim]Prefix with[/] /discover [dim]to run the full discovery loop[/]\n"
-            "  [dim]Prefix with[/] /analyze [dim]for the hypothesis engine (IBE + falsification)[/]\n"
+            "  [dim]Prefix with[/] /analyze [dim]for the hypothesis engine[/]\n"
             "  [dim]Prefix with[/] /live [dim]for live retrieval from PubMed/bioRxiv/arXiv[/]\n"
             "  [dim]Type[/] quit [dim]to exit[/]",
             title="Acheron Nexus",
@@ -785,7 +786,12 @@ def _display_analysis_result(result):
     # Ranked Hypotheses with IBE scores + falsification
     if result.hypotheses:
         for h in result.hypotheses:
-            conf_color = "green" if h.confidence >= 70 else "yellow" if h.confidence >= 40 else "red"
+            if h.confidence >= 70:
+                conf_color = "green"
+            elif h.confidence >= 40:
+                conf_color = "yellow"
+            else:
+                conf_color = "red"
             content_lines = [
                 f"[bold]{h.statement}[/]",
                 "",
