@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -14,11 +15,20 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     """Application-wide settings, populated from env vars or .env file."""
 
-    # LLM
-    llm_provider: str = Field(default="anthropic", alias="ACHERON_LLM_PROVIDER")
+    # LLM provider — defaults to Anthropic (Claude)
+    llm_provider: Literal["openai", "anthropic"] = Field(
+        default="anthropic", alias="ACHERON_LLM_PROVIDER"
+    )
+
+    # Generic LLM settings (used as overrides or for OpenAI provider)
     llm_api_key: str = Field(default="", alias="ACHERON_LLM_API_KEY")
     llm_base_url: str = Field(default="", alias="ACHERON_LLM_BASE_URL")
     llm_model: str = Field(default="", alias="ACHERON_LLM_MODEL")
+
+    # Anthropic-native LLM settings
+    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    anthropic_model: str = Field(default="claude-sonnet-4-20250514", alias="ANTHROPIC_MODEL")
+    anthropic_max_tokens: int = Field(default=4096, alias="ANTHROPIC_MAX_TOKENS")
 
     # Embeddings
     embedding_api_key: str = Field(default="", alias="ACHERON_EMBEDDING_API_KEY")
@@ -67,23 +77,42 @@ class Settings(BaseSettings):
         "populate_by_name": True,
     }
 
+    # Derived — active model name regardless of provider
+    @property
+    def active_model(self) -> str:
+        """Return the model name for the currently selected provider."""
+        if self.llm_provider == "anthropic":
+            return self.anthropic_model
+        return self.llm_model or "gpt-4o"
+
+    @property
+    def compute_available(self) -> bool:
+        """True when the selected provider has an API key configured."""
+        if self.llm_provider == "anthropic":
+            return bool(self.anthropic_api_key)
+        return bool(self.llm_api_key)
+
     # Derived LLM settings (provider-aware defaults)
     @property
     def resolved_llm_api_key(self) -> str:
-        """Return the API key, falling back to provider-specific env vars."""
+        """Return the API key for the active provider.
+
+        For anthropic: uses ANTHROPIC_API_KEY directly (no ACHERON_LLM_API_KEY needed).
+        For openai: uses ACHERON_LLM_API_KEY, falling back to OPENAI_API_KEY.
+        """
+        if self.llm_provider == "anthropic":
+            return self.anthropic_api_key
         if self.llm_api_key:
             return self.llm_api_key
-        if self.llm_provider == "anthropic":
-            return os.environ.get("ANTHROPIC_API_KEY", "")
         return os.environ.get("OPENAI_API_KEY", "")
 
     @property
     def resolved_llm_model(self) -> str:
         """Return the model, defaulting based on provider."""
+        if self.llm_provider == "anthropic":
+            return self.anthropic_model
         if self.llm_model:
             return self.llm_model
-        if self.llm_provider == "anthropic":
-            return "claude-sonnet-4-20250514"
         return "gpt-4o"
 
     @property

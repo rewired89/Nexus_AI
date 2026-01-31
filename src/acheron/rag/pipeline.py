@@ -189,11 +189,12 @@ class RAGPipeline:
 
         api_key = self.settings.resolved_llm_api_key
         if not api_key:
+            if self._provider == "anthropic":
+                hint = "Set ANTHROPIC_API_KEY in your environment or .env file."
+            else:
+                hint = "Set ACHERON_LLM_API_KEY or OPENAI_API_KEY in your environment or .env file."
             raise RuntimeError(
-                f"No API key configured for provider '{self._provider}'. "
-                f"Set ACHERON_LLM_API_KEY or "
-                f"{'ANTHROPIC_API_KEY' if self._provider == 'anthropic' else 'OPENAI_API_KEY'} "
-                f"in your environment or .env file."
+                f"No API key configured for provider '{self._provider}'. {hint}"
             )
 
         if self._provider == "anthropic":

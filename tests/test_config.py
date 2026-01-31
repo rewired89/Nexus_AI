@@ -27,8 +27,9 @@ def test_anthropic_provider_defaults():
 
 
 def test_explicit_model_overrides_provider_default():
-    s = Settings(llm_provider="anthropic", llm_model="claude-3-haiku-20240307")
+    s = Settings(llm_provider="anthropic", anthropic_model="claude-3-haiku-20240307")
     assert s.resolved_llm_model == "claude-3-haiku-20240307"
+    assert s.active_model == "claude-3-haiku-20240307"
 
 
 def test_derived_paths():

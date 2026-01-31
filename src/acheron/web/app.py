@@ -104,6 +104,26 @@ async def home(request: Request):
 # ======================================================================
 # API endpoints
 # ======================================================================
+def _compute_error_json() -> JSONResponse:
+    """Return a 503 JSON error when Compute layer is unavailable."""
+    settings = get_settings()
+    provider = settings.llm_provider
+    if provider == "anthropic":
+        key_hint = "Set ANTHROPIC_API_KEY in your .env file."
+    else:
+        key_hint = "Set ACHERON_LLM_API_KEY or OPENAI_API_KEY in your .env file."
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "Compute layer unavailable",
+            "provider": provider,
+            "detail": f"Provider '{provider}' is not configured. {key_hint}",
+            "retrieval_available": True,
+            "hint": "Use retrieve_only=true or 'acheron query -r' for retrieval-only mode.",
+        },
+    )
+
+
 @app.post("/api/query", response_model=QueryResponse)
 async def api_query(req: QueryRequest):
     pipeline = get_pipeline()
@@ -128,6 +148,10 @@ async def api_query(req: QueryRequest):
             model_used="",
             total_chunks_searched=len(results),
         )
+
+    settings = get_settings()
+    if not settings.compute_available:
+        return _compute_error_json()
 
     response = pipeline.query(
         req.question, filter_source=req.source_filter, n_results=req.n_results
@@ -158,6 +182,10 @@ async def api_query(req: QueryRequest):
 async def api_discover(req: QueryRequest):
     """Execute the discovery loop and return structured results."""
     from acheron.rag.ledger import ExperimentLedger
+
+    settings = get_settings()
+    if not settings.compute_available:
+        return _compute_error_json()
 
     pipeline = get_pipeline()
     result = pipeline.discover(
@@ -216,6 +244,10 @@ async def api_discover(req: QueryRequest):
 @app.post("/api/analyze")
 async def api_analyze(req: QueryRequest):
     """Evidence-Bound Hypothesis Engine: evidence graph + IBE hypotheses + falsification."""
+    settings = get_settings()
+    if not settings.compute_available:
+        return _compute_error_json()
+
     pipeline = get_pipeline()
     result = pipeline.analyze(
         req.question,
