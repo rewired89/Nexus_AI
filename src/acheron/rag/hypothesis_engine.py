@@ -111,6 +111,26 @@ Vmem, gene expression (Wnt, Notum, piwi-1), and regenerative outcomes.
 When data does NOT exist: do NOT invent numeric Vmem values. Infer directional \
 effects only (hyperpolarization vs depolarization). Explicitly state uncertainty.
 
+MATHEMATICAL TOOLBOX:
+When Vmem data is missing, calculate E_ion using the Nernst Equation:
+  E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
+R = 8.314 J/(mol*K), T = temperature in K, z = ion valence, F = 96485 C/mol.
+Use nearest phylogenetic neighbor concentrations when exact values are unknown.
+Label ALL calculated values as [HEURISTIC].
+
+ACHERON DECISION PROTOCOL:
+"Low Confidence" is NOT a valid final answer. When evidence is sparse:
+1. State what IS known and what is extrapolated.
+2. Apply first-principles reasoning (physics, chemistry, information theory).
+3. Commit to a Strategic Recommendation with labeled assumptions.
+4. Provide a falsification path.
+
+ERROR CORRECTION & FAULT TOLERANCE:
+Map regeneration to RAID-level redundancy:
+- Target Morphology = Checksum (pattern validates data integrity).
+- Regeneration = RAID rebuild (repair from distributed bioelectric state).
+- Colony/tissue redundancy = Replication factor.
+
 GUARDRAILS:
 - Never present hypotheses as facts.
 - Cite [1], [2], etc. for every factual claim.
@@ -190,8 +210,22 @@ For hypotheses involving experimental testing, evaluate model organisms:
 | Relevance to hypothesis | ... | ... | ... | ... |
 Rate as Low/Medium/High. If no source data, state "No data".
 
+PROTOCOL SPECIFICATION
+For the recommended experimental approach:
+- Write Method: (optogenetic stimulation, ionophore bath, galvanotaxis, etc.)
+- Read Method: (voltage-sensitive dyes, micro-electrode arrays, sequencing, etc.)
+- Logic Gate Equivalent: how the substrate performs NOT/AND via bioelectric flux
+- Estimated SNR: signal-to-noise ratio for the read method
+- Error Correction: biological redundancy mechanism
+
+FAULT TOLERANCE MAPPING
+- Target Morphology = Checksum (stored pattern validates data integrity)
+- Regeneration = RAID rebuild (tissue repair from distributed state)
+- Specify RAID level equivalent for the organism's fault tolerance
+
 UNCERTAINTY
 - Explicit gaps, missing variables, conflicting evidence
+- "Low Confidence" is NOT a final answer — commit to a recommendation
 
 OVERALL_CONFIDENCE: [0-100]
 OVERALL_JUSTIFICATION: [brief reason]
@@ -232,6 +266,14 @@ Evaluate which model organism is best suited for validating this design:
 | Relevance to design | ... | ... | ... | ... |
 Rate as Low/Medium/High. If no source data, state "No data".
 
+PROTOCOL SPECIFICATION
+For the recommended implementation:
+- Write Method: (optogenetic stimulation, ionophore bath, galvanotaxis, etc.)
+- Read Method: (voltage-sensitive dyes, micro-electrode arrays, sequencing, etc.)
+- Logic Gate Equivalent: how the substrate performs NOT/AND via bioelectric flux
+- Estimated SNR: signal-to-noise ratio for the read method
+- Error Correction: biological redundancy mechanism
+
 VALIDATION PATH
 How to validate the design:
 - Re-analysis of existing datasets
@@ -239,7 +281,16 @@ How to validate the design:
 - Targeted experiments
 - Cross-species comparison strategies
 
-UNCERTAINTY
+FAULT TOLERANCE MAPPING
+- Target Morphology = Checksum (stored pattern validates data integrity)
+- Regeneration = RAID rebuild (tissue repair from distributed state)
+- Colony/tissue redundancy = Replication factor
+- Specify RAID level equivalent for the system's fault tolerance
+
+UNCERTAINTY & STRATEGIC RECOMMENDATION
+- "Low Confidence" is NOT a final answer — commit to a recommendation
+- State labeled assumptions and a falsification path
+
 OVERALL_CONFIDENCE: [0-100]
 OVERALL_JUSTIFICATION: [brief reason]
 
@@ -317,6 +368,8 @@ def parse_evidence_graph(raw_output: str) -> EvidenceGraph:
                 "CONFIDENCE:", "NEXT_QUER", "SYSTEM DESIGN",
                 "VALIDATION PATH", "OVERALL_CONFIDENCE",
                 "SUBSTRATE SELECTION", "BIGR",
+                "PROTOCOL SPECIFICATION", "FAULT TOLERANCE",
+                "HEURISTIC BASELINE", "STRATEGIC RECOMMEND",
             ]
         ):
             if current_claim:
@@ -458,7 +511,8 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
             for header in [
                 "UNCERTAINTY", "OVERALL_CONFIDENCE", "NEXT_QUER",
                 "SYSTEM DESIGN", "VALIDATION PATH", "BIOELECTRIC SCHEMATIC",
-                "SUBSTRATE SELECTION",
+                "SUBSTRATE SELECTION", "PROTOCOL SPECIFICATION",
+                "FAULT TOLERANCE", "STRATEGIC RECOMMEND",
             ]
         ):
             if current:

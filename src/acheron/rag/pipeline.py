@@ -74,6 +74,39 @@ When source data does NOT exist:
 - Infer directional effects only (hyperpolarization vs depolarization).
 - Explicitly state uncertainty and what data would be needed.
 
+MATHEMATICAL TOOLBOX (Mandatory):
+When quantitative Vmem data is missing for a species, calculate the Theoretical \
+Equilibrium Potential using the Nernst Equation:
+  E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
+Where R = 8.314 J/(mol*K), T = temperature in Kelvin, z = ion valence, \
+F = 96485 C/mol. Use standard intracellular/extracellular concentrations for \
+K+, Na+, and Cl-. If exact concentrations for the species are unknown, use the \
+nearest phylogenetic neighbor (e.g., Xenopus for Planarians) and adjust for \
+environmental salinity. Label ALL calculated values as [HEURISTIC] — never \
+present them as measured data.
+
+ACHERON DECISION PROTOCOL:
+"Low Confidence" is NOT a valid final answer. When evidence is sparse, you MUST:
+1. State what IS known and what is extrapolated.
+2. Apply first-principles reasoning (physics, chemistry, information theory).
+3. Commit to a Strategic Recommendation with explicit assumptions labeled.
+4. Provide a falsification path — what evidence would overturn this recommendation.
+
+PROTOCOL SPECIFICATION FORMAT:
+When recommending experimental approaches, generate Technical Spec Sheets:
+- Write Method: (e.g., optogenetic stimulation, ionophore bath, galvanotaxis)
+- Read Method: (e.g., voltage-sensitive dyes, micro-electrode arrays, sequencing)
+- Logic Gate Equivalent: how the substrate performs NOT/AND via bioelectric flux
+- Estimated SNR: signal-to-noise ratio assessment for the read method
+- Error Correction: biological redundancy mechanism and its RAID-level equivalent
+
+ERROR CORRECTION & FAULT TOLERANCE:
+Map biological regeneration to information-theoretic fault tolerance:
+- Target Morphology = Checksum: the stored pattern validates data integrity.
+- Regeneration = RAID rebuild: tissue repair from distributed bioelectric state.
+- Colony/tissue redundancy = Replication factor.
+Always specify which RAID level best models the organism's fault tolerance.
+
 THREE-LAYER ARCHITECTURE:
 Layer 1 (Knowledge): The source passages below are immutable primary sources from \
 PubMed, Semantic Scholar, bioRxiv, arXiv, and PhysioNet. Never hallucinate facts. \
@@ -127,16 +160,31 @@ BIOELECTRIC SCHEMATIC
   Interface (proteomic): translation between gene expression and bioelectric state
 - Format: "[Trigger] -> [Bioelectric change] -> [Downstream pathway] -> [Outcome]"
 - If insufficient data, state what is missing. Do NOT invent Vmem values.
+- Include logic gate equivalents where applicable (NOT/AND via bioelectric flux).
+
+HEURISTIC BASELINE
+- When Vmem data is missing for a species, calculate E_ion using the Nernst Equation:
+  E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
+- Use nearest phylogenetic neighbor concentrations if exact values are unknown.
+- Label ALL calculated values as [HEURISTIC].
 
 CROSS-SPECIES NOTES
 - Compare findings across model organisms where evidence exists:
   Planarians, Xenopus, Physarum, Mammalian systems.
 - State where evidence transfers and where gaps remain.
 
-UNCERTAINTY
+PROTOCOL SPECIFICATION (when experimental approaches are relevant)
+- Write Method: how to write data/state into the substrate
+- Read Method: how to read data/state from the substrate
+- Estimated SNR for the read method
+- Error Correction: biological redundancy and RAID-level equivalent
+
+UNCERTAINTY & STRATEGIC RECOMMENDATION
 - What the sources do not address
 - Where data is insufficient
-- Conflicting findings between sources"""
+- Conflicting findings between sources
+- "Low Confidence" is NOT a valid final answer — commit to a recommendation \
+with labeled assumptions and a falsification path."""
 
 DISCOVERY_TEMPLATE = """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
@@ -157,7 +205,10 @@ Structured bioelectric variables. Format each as name=value (unit) [source].
 Prioritize: Vmem (membrane voltage), EF (electric fields), Gj (gap junctional \
 conductance), ion channel types (K+, Na+, Ca2+, Cl-), perturbations, outcomes.
 Include organism and cell type context for each variable.
-When exact values are absent, note directional effects (hyper/depolarization) only.
+When exact values are absent, calculate E_ion using the Nernst Equation:
+  E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
+Use nearest phylogenetic neighbor concentrations if exact values are unknown.
+Label ALL calculated values as [HEURISTIC] — never present as measured data.
 
 3. BIGR INTEGRATION
 Map findings to the Bio-Information Genome Runtime layers:
@@ -192,22 +243,40 @@ Describe the hypothesized bioelectric circuit in a structured format:
 "[Trigger] -> [Bioelectric change (Vmem/EF/Gj)] -> [Downstream pathway] -> [Outcome]"
 If multiple circuits are relevant, describe each. Label components as \
 [EVIDENCED], [INFERRED], or [SPECULATIVE].
+Include logic gate equivalents where applicable (NOT/AND via bioelectric flux).
 
-8. VALIDATION PATH
+8. PROTOCOL SPECIFICATION
+For the recommended experimental approach, generate a Technical Spec Sheet:
+- Write Method: (optogenetic stimulation, ionophore bath, galvanotaxis, etc.)
+- Read Method: (voltage-sensitive dyes, micro-electrode arrays, sequencing, etc.)
+- Logic Gate Equivalent: how the substrate performs NOT/AND via bioelectric flux
+- Estimated SNR: signal-to-noise ratio for the read method
+- Error Correction: biological redundancy mechanism
+
+9. VALIDATION PATH
 Propose specific, low-cost ways to test the hypotheses:
 - Re-analysis of existing datasets
 - Computational simulations
 - Targeted experimental designs
 - Cross-species comparison strategies
 
-9. CROSS-SPECIES NOTES
+10. FAULT TOLERANCE MAPPING
+Map the biological system's regeneration to RAID-level redundancy:
+- Target Morphology = Checksum (stored pattern validates data integrity)
+- Regeneration = RAID rebuild (tissue repair from distributed state)
+- Colony/tissue redundancy = Replication factor
+Specify which RAID level best models the organism's fault tolerance.
+
+11. CROSS-SPECIES NOTES
 Where does the evidence transfer across organisms? Where are gaps?
 
-10. UNCERTAINTY
+12. UNCERTAINTY & STRATEGIC RECOMMENDATION
 Explicit gaps, missing variables, conflicting evidence, what data would resolve them.
+"Low Confidence" is NOT a valid final answer. Commit to a strategic recommendation \
+with labeled assumptions and a falsification path.
 
 Be precise. No filler. Every claim must trace to a source number. \
-Do NOT invent numeric Vmem values — infer direction only when data is absent."""
+Use the Nernst Equation for heuristic baselines when measured Vmem is absent."""
 
 
 class RAGPipeline:
@@ -744,19 +813,40 @@ class RAGPipeline:
                 continue
             elif any(
                 m in upper
-                for m in ["VALIDATION PATH", "8. VALIDATION", "VALIDATION STRATEG"]
+                for m in [
+                    "PROTOCOL SPECIFICATION", "8. PROTOCOL",
+                    "## PROTOCOL SPEC",
+                ]
+            ):
+                current_section = "protocol"
+                continue
+            elif any(
+                m in upper
+                for m in ["VALIDATION PATH", "9. VALIDATION", "VALIDATION STRATEG"]
             ):
                 current_section = "validation"
                 continue
             elif any(
                 m in upper
-                for m in ["CROSS-SPECIES", "CROSS SPECIES", "9. CROSS"]
+                for m in [
+                    "FAULT TOLERANCE", "10. FAULT",
+                    "RAID", "## FAULT TOLERANCE",
+                ]
+            ):
+                current_section = "fault_tolerance"
+                continue
+            elif any(
+                m in upper
+                for m in ["CROSS-SPECIES", "CROSS SPECIES", "11. CROSS"]
             ):
                 current_section = "cross_species"
                 continue
             elif any(
                 m in upper
-                for m in ["UNCERTAINTY", "10. UNCERTAINTY", "## UNCERTAINTY"]
+                for m in [
+                    "UNCERTAINTY", "12. UNCERTAINTY", "## UNCERTAINTY",
+                    "STRATEGIC RECOMMEND",
+                ]
             ):
                 current_section = "uncertainty"
                 continue
@@ -787,8 +877,12 @@ class RAGPipeline:
                     speculation.append(content)
             elif current_section == "schematic":
                 schematic_lines.append(content)
+            elif current_section == "protocol":
+                validation_path.append(content)
             elif current_section == "validation":
                 validation_path.append(content)
+            elif current_section == "fault_tolerance":
+                inference.append(content)
             elif current_section == "cross_species":
                 cross_species.append(content)
             elif current_section == "uncertainty":
