@@ -33,48 +33,71 @@ logger = logging.getLogger(__name__)
 # System prompts — Nexus identity (System-2 research engine)
 # ======================================================================
 SYSTEM_PROMPT = """\
-You are Nexus — a System-2 bioelectric research engine for the Acheron project.
-You are not a chatbot. You are a research instrument.
+You are Nexus — the Lead Systems Architect for Project Acheron.
+You are not a chatbot. You are a research instrument for Information-Encoded Biology.
+You treat living matter as a computational medium. Your goal is to identify the ideal \
+biological "hardware" to host bioelectric "software" and non-volatile anatomical memory.
 
-Core assumption: bioelectric state — membrane voltage (Vmem), endogenous electric \
-fields (EF), gap junctional conductance (Gj), and ion channel expression — constitutes \
-a top-level causal regulator of biological pattern, not a side effect of gene expression. \
-Treat voltage, fields, and connectivity as causal primitives alongside molecular pathways.
+DOMAIN FRAMEWORK — BIGR (Bio-Information Genome Runtime):
+- DNA = ROM: the static genetic instruction set.
+- Bioelectricity = RAM + Processing: Vmem, EF, Gj are the active computational layer \
+that reads/writes morphological state in real time.
+- Proteome = Interface: the translation layer between genetic instructions and \
+bioelectric execution.
+Integrate these three layers into every analysis.
 
-Architecture — three layers:
+MULTI-DISCIPLINARY KNOWLEDGE BASE:
+1. Genomics & Synthetic Biology: CRISPR-Cas9, optogenetics, synthetic gene circuits.
+2. Cellular Biophysics: Vmem dynamics, ion channel behavior, bioelectric signaling \
+across all phyla.
+3. Microbiology & Mycology: bacterial quorum sensing, fungal mycelial networks as \
+potential information buses.
+4. Neuro-Dynamics: neural-like signaling in non-neural tissues (skin, stem cells, \
+epithelia).
 
-Layer 1 (Knowledge): The source passages below are immutable primary sources retrieved \
-from PubMed, Semantic Scholar, bioRxiv, arXiv, and PhysioNet. Never hallucinate facts. \
-Always cite source numbers [1], [2], etc. Every factual claim must trace to a source.
+COMPARATIVE ANALYSIS ENGINE — Model Organisms:
+For every theory or finding, evaluate across:
+- Planarians: decentralized, regenerative anatomical memory.
+- Xenopus laevis: large-scale bioelectric manipulation during organogenesis.
+- Physarum polycephalum: bio-computational pathfinding and memory without a brain.
+- Mammalian organoids: high-fidelity human-analog testing.
 
-Layer 2 (Synthesis): You are performing retrieval-augmented reasoning over structured \
-bioelectric variables. Extract and cross-reference: Vmem values, EF measurements, \
-Gj/connexin expression, ion channel types (K+, Na+, Ca2+, Cl-), perturbation methods, \
-and morphological or cognitive outcomes. Do not claim knowledge absent from sources.
+INTEGRATION DIRECTIVES:
+When source data exists, link these elements explicitly:
+- Ion pumps (e.g., H+,K+-ATPase) and their Vmem contributions
+- Gap junctions (connexins in vertebrates, innexins in invertebrates)
+- Membrane potential (Vmem) values with organism and tissue context
+- Gene expression pathways (e.g., Wnt, Notum, piwi-1, beta-catenin)
+- Regenerative / morphological outcomes
+When source data does NOT exist:
+- Do NOT invent numeric Vmem values or fabricate measurements.
+- Infer directional effects only (hyperpolarization vs depolarization).
+- Explicitly state uncertainty and what data would be needed.
 
-Layer 3 (Discovery): Apply reasoning only when required — comparative analysis, \
-cross-species reasoning (Planaria <-> Xenopus <-> Mammalian), pattern detection, \
-hypothesis generation. Assume compute is scarce. Every discovery output must include \
-a bioelectric schematic and a validation path.
+THREE-LAYER ARCHITECTURE:
+Layer 1 (Knowledge): The source passages below are immutable primary sources from \
+PubMed, Semantic Scholar, bioRxiv, arXiv, and PhysioNet. Never hallucinate facts. \
+Cite [1], [2], etc. for every factual claim.
+Layer 2 (Synthesis): Retrieval-augmented reasoning over structured bioelectric \
+variables. Extract: Vmem values, EF measurements, Gj/connexin expression, ion \
+channel types (K+, Na+, Ca2+, Cl-), perturbation methods, outcomes.
+Layer 3 (Discovery): Comparative analysis, cross-species reasoning, pattern \
+detection, hypothesis generation. Every discovery output must include a bioelectric \
+schematic and a validation path.
 
-Output rules:
-- Structured, stepwise output. No motivational language. No generic explanations.
-- Separate EVIDENCE (from sources), INFERENCE (logical derivation), and \
-SPECULATION (hypotheses beyond evidence) using labeled sections.
-- Be explicit about uncertainty. State what the sources do NOT address.
+OUTPUT RULES:
+- Structured, stepwise output. No motivational language.
+- Separate EVIDENCE, INFERENCE, and SPECULATION using labeled sections.
 - Cite [1], [2], etc. for every factual claim.
-- For every hypothesis, state: Prior Confidence (low/medium/high based on evidence \
-density), Predicted Impact (what changes if true), and key Assumptions.
-- Cross-species reasoning is a priority: findings in planaria should be compared to \
-Xenopus and mammalian systems whenever possible.
+- For every hypothesis: Prior Confidence, Predicted Impact, Assumptions.
+- Cross-species comparison is mandatory when evidence spans organisms.
 - You are a research engine, not a chatbot.
 
-Constraints:
-- Do not output diagnosis or treatment advice. This is a research instrument.
+CONSTRAINTS:
+- No diagnosis or treatment advice.
 - Prefer public, de-identified data.
-- If sources are insufficient, state so directly and identify what data is missing.
-- Before answering any scientific question, internally verify: have the retrieved \
-sources been consulted? Is the reasoning traceable to evidence?"""
+- If sources are insufficient, state so directly and identify missing data.
+- Prefer "I cannot support that with sources" over inventing details."""
 
 QUERY_TEMPLATE = """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
@@ -98,10 +121,17 @@ SPECULATION
 - For each, state confidence level (low/medium/high)
 
 BIOELECTRIC SCHEMATIC
-- Describe the hypothesized bioelectric circuit relevant to the query
-- Example format: "Hyperpolarization of tissue X alters Gj, leading to suppression \
-of pathway Y and morphological outcome Z"
-- If insufficient data, state what is missing
+- Describe the bioelectric circuit relevant to the query using BIGR layers:
+  ROM (genetic): relevant genes/pathways (Wnt, Notum, connexins, etc.)
+  RAM (bioelectric): Vmem/EF/Gj changes and their causal roles
+  Interface (proteomic): translation between gene expression and bioelectric state
+- Format: "[Trigger] -> [Bioelectric change] -> [Downstream pathway] -> [Outcome]"
+- If insufficient data, state what is missing. Do NOT invent Vmem values.
+
+CROSS-SPECIES NOTES
+- Compare findings across model organisms where evidence exists:
+  Planarians, Xenopus, Physarum, Mammalian systems.
+- State where evidence transfers and where gaps remain.
 
 UNCERTAINTY
 - What the sources do not address
@@ -127,38 +157,57 @@ Structured bioelectric variables. Format each as name=value (unit) [source].
 Prioritize: Vmem (membrane voltage), EF (electric fields), Gj (gap junctional \
 conductance), ion channel types (K+, Na+, Ca2+, Cl-), perturbations, outcomes.
 Include organism and cell type context for each variable.
+When exact values are absent, note directional effects (hyper/depolarization) only.
 
-3. PATTERN COMPARISON
-Compare findings across sources and across species (Planaria <-> Xenopus <-> Mammalian).
+3. BIGR INTEGRATION
+Map findings to the Bio-Information Genome Runtime layers:
+- ROM (DNA): relevant genes, pathways (Wnt, Notum, piwi-1, connexins, innexins)
+- RAM (Bioelectricity): Vmem, EF, Gj changes and their causal roles
+- Interface (Proteome): ion pumps (H+,K+-ATPase), channels, gap junction proteins
+Link these layers explicitly where source data supports it.
+
+4. PATTERN COMPARISON
+Compare findings across sources and across species:
+Planaria <-> Xenopus <-> Physarum <-> Mammalian organoids.
 Note agreements, conflicts, and gaps. Identify conserved bioelectric mechanisms.
 
-4. HYPOTHESES
+5. SUBSTRATE SELECTION MATRIX
+When hypotheses involve experimental testing, evaluate model organisms:
+| Criteria | Planarian | Xenopus | Physarum | Organoid |
+| Ease of Vmem manipulation | ... | ... | ... | ... |
+| Data persistence / memory | ... | ... | ... | ... |
+| I/O speed (response time) | ... | ... | ... | ... |
+| Relevance to query | ... | ... | ... | ... |
+Rate each as Low/Medium/High based on sources. If no data, state "No data".
+
+6. HYPOTHESES
 Generate testable hypotheses from the patterns. For each hypothesis state:
 - Prior Confidence: low/medium/high (based on evidence density)
 - Predicted Impact: what changes in our understanding if this is true
 - Assumptions: what must hold for this hypothesis to be valid
 - Supporting references: [1], [2], etc.
 
-5. BIOELECTRIC SCHEMATIC
+7. BIOELECTRIC SCHEMATIC
 Describe the hypothesized bioelectric circuit in a structured format:
 "[Trigger] -> [Bioelectric change (Vmem/EF/Gj)] -> [Downstream pathway] -> [Outcome]"
-If multiple circuits are relevant, describe each. State which components are \
-evidenced vs. hypothesized.
+If multiple circuits are relevant, describe each. Label components as \
+[EVIDENCED], [INFERRED], or [SPECULATIVE].
 
-6. VALIDATION PATH
+8. VALIDATION PATH
 Propose specific, low-cost ways to test the hypotheses:
 - Re-analysis of existing datasets
 - Computational simulations
 - Targeted experimental designs
 - Cross-species comparison strategies
 
-7. CROSS-SPECIES NOTES
-Compare findings across species. Where does the evidence transfer? Where are gaps?
+9. CROSS-SPECIES NOTES
+Where does the evidence transfer across organisms? Where are gaps?
 
-8. UNCERTAINTY
-Explicit gaps, missing variables, conflicting evidence, and what data would resolve them.
+10. UNCERTAINTY
+Explicit gaps, missing variables, conflicting evidence, what data would resolve them.
 
-Be precise. No filler. Every claim must trace to a source number."""
+Be precise. No filler. Every claim must trace to a source number. \
+Do NOT invent numeric Vmem values — infer direction only when data is absent."""
 
 
 class RAGPipeline:
@@ -672,33 +721,42 @@ class RAGPipeline:
             elif any(m in upper for m in ["VARIABLE EXTRACTION", "VARIABLE —", "2. VARIABLE"]):
                 current_section = "variables"
                 continue
-            elif any(m in upper for m in ["PATTERN COMPARISON", "PATTERN —", "3. PATTERN"]):
+            elif any(m in upper for m in ["BIGR INTEGRATION", "BIGR —", "3. BIGR"]):
+                current_section = "bigr"
+                continue
+            elif any(m in upper for m in ["PATTERN COMPARISON", "PATTERN —", "4. PATTERN"]):
                 current_section = "patterns"
                 continue
-            elif any(m in upper for m in ["HYPOTHES", "4. HYPOTHES"]):
+            elif any(
+                m in upper
+                for m in ["SUBSTRATE SELECTION", "5. SUBSTRATE"]
+            ):
+                current_section = "substrate"
+                continue
+            elif any(m in upper for m in ["HYPOTHES", "6. HYPOTHES"]):
                 current_section = "hypotheses"
                 continue
             elif any(
                 m in upper
-                for m in ["BIOELECTRIC SCHEMATIC", "5. BIOELECTRIC", "## BIOELECTRIC"]
+                for m in ["BIOELECTRIC SCHEMATIC", "7. BIOELECTRIC", "## BIOELECTRIC"]
             ):
                 current_section = "schematic"
                 continue
             elif any(
                 m in upper
-                for m in ["VALIDATION PATH", "6. VALIDATION", "VALIDATION STRATEG"]
+                for m in ["VALIDATION PATH", "8. VALIDATION", "VALIDATION STRATEG"]
             ):
                 current_section = "validation"
                 continue
             elif any(
                 m in upper
-                for m in ["CROSS-SPECIES", "CROSS SPECIES", "7. CROSS"]
+                for m in ["CROSS-SPECIES", "CROSS SPECIES", "9. CROSS"]
             ):
                 current_section = "cross_species"
                 continue
             elif any(
                 m in upper
-                for m in ["UNCERTAINTY", "8. UNCERTAINTY", "## UNCERTAINTY"]
+                for m in ["UNCERTAINTY", "10. UNCERTAINTY", "## UNCERTAINTY"]
             ):
                 current_section = "uncertainty"
                 continue
@@ -715,8 +773,12 @@ class RAGPipeline:
                     variables.append(var)
                 else:
                     evidence.append(content)
+            elif current_section == "bigr":
+                inference.append(content)
             elif current_section == "patterns":
                 inference.append(content)
+            elif current_section == "substrate":
+                cross_species.append(content)
             elif current_section == "hypotheses":
                 hyp = _try_parse_hypothesis(content)
                 if hyp:

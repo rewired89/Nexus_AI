@@ -18,7 +18,6 @@ Windows PowerShell:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 import tempfile
@@ -80,7 +79,7 @@ def main():
     # ----------------------------------------------------------------
     # Step 1: Test nexus_ingest module directly
     # ----------------------------------------------------------------
-    print(f"\n[1/4] Testing nexus_ingest.pmc_pubmed module...")
+    print("\n[1/4] Testing nexus_ingest.pmc_pubmed module...")
     print(f"      Query: {args.query!r} (retmax={args.retmax})")
 
     try:
@@ -130,17 +129,16 @@ def main():
     # ----------------------------------------------------------------
     # Step 2: Test collector integration
     # ----------------------------------------------------------------
-    print(f"\n[2/4] Testing PubMedCollector integration...")
+    print("\n[2/4] Testing PubMedCollector integration...")
 
     from acheron.collectors.pubmed import PubMedCollector
-    from acheron.models import Paper
 
     collector = PubMedCollector()
     papers = collector.search(args.query, max_results=args.retmax)
     collector.close()
 
     if not papers:
-        print(f"\n[FAIL] PubMedCollector returned no papers")
+        print("\n[FAIL] PubMedCollector returned no papers")
         return 1
 
     print(f"      Collector returned {len(papers)} Paper objects")
@@ -161,7 +159,7 @@ def main():
     # ----------------------------------------------------------------
     # Step 3: Test chunking with evidence spans
     # ----------------------------------------------------------------
-    print(f"\n[3/4] Testing chunking with evidence spans...")
+    print("\n[3/4] Testing chunking with evidence spans...")
 
     from acheron.extraction.chunker import TextChunker
 
@@ -190,20 +188,23 @@ def main():
 
     # Show sample chunk
     sample = all_chunks[0]
-    print(f"\n      Sample chunk:")
+    print("\n      Sample chunk:")
     print(f"        chunk_id: {sample.chunk_id[:50]}...")
     print(f"        section: {sample.section or '(none)'}")
     print(f"        source_file: {sample.source_file or '(none)'}")
     print(f"        span: {sample.span_start}-{sample.span_end}")
     print(f"        xpath: {sample.xpath or '(none)'}")
-    print(f"        excerpt: {sample.excerpt[:80]}..." if sample.excerpt else "        excerpt: (none)")
+    if sample.excerpt:
+        print(f"        excerpt: {sample.excerpt[:80]}...")
+    else:
+        print("        excerpt: (none)")
 
     print("      [OK] Evidence span fields populated")
 
     # ----------------------------------------------------------------
     # Step 4: Test vector store indexing
     # ----------------------------------------------------------------
-    print(f"\n[4/4] Testing vector store indexing...")
+    print("\n[4/4] Testing vector store indexing...")
 
     from acheron.vectorstore.store import VectorStore
 
@@ -218,7 +219,7 @@ def main():
     print(f"      Final count: {final_count}")
 
     if final_count == 0:
-        print(f"\n[FAIL] Vector store has 0 chunks after indexing")
+        print("\n[FAIL] Vector store has 0 chunks after indexing")
         print("       Check that embeddings are working (may need sentence-transformers)")
         return 1
 
@@ -228,7 +229,7 @@ def main():
 
     if results:
         r = results[0]
-        print(f"\n      Top result:")
+        print("\n      Top result:")
         print(f"        paper_id: {r.paper_id}")
         print(f"        title: {r.paper_title[:60]}...")
         print(f"        pmid: {r.pmid or '(none)'}")
@@ -245,7 +246,7 @@ def main():
     print("\n" + "=" * 60)
     print("[SUCCESS] All sanity tests passed!")
     print("=" * 60)
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  - Records from PubMed: {len(records)}")
     print(f"  - Full text from PMC: {fulltext_count}")
     print(f"  - Papers indexed: {len(papers)}")

@@ -16,8 +16,6 @@ import argparse
 import json
 import logging
 import os
-import re
-import sys
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -424,7 +422,8 @@ class PMCPubMedFetcher:
             return sections
 
         # Find body sections
-        for body in root.findall(".//{http://www.ncbi.nlm.nih.gov/pmc}body") or root.findall(".//body"):
+        ns_body = ".//{http://www.ncbi.nlm.nih.gov/pmc}body"
+        for body in root.findall(ns_body) or root.findall(".//body"):
             for sec in body.findall(".//sec") or body.findall(".//{http://www.ncbi.nlm.nih.gov/pmc}sec"):
                 title_el = sec.find("title")
                 if title_el is None:
@@ -596,7 +595,11 @@ def main():
         fulltext_status = "YES" if rec.fulltext_nxml else "no"
         print(f"[{i}] PMID:{rec.pmid} PMCID:{rec.pmcid or '-'} DOI:{rec.doi or '-'}")
         print(f"    {rec.title[:80]}...")
-        print(f"    {rec.journal} ({rec.year}) | Authors: {len(rec.authors)} | Fulltext: {fulltext_status}")
+        authors_n = len(rec.authors)
+        print(
+            f"    {rec.journal} ({rec.year}) | Authors: {authors_n}"
+            f" | Fulltext: {fulltext_status}"
+        )
         if rec.fulltext_sections:
             print(f"    Sections: {[s['heading'] for s in rec.fulltext_sections[:5]]}")
         print()
