@@ -46,6 +46,41 @@ that reads/writes morphological state in real time.
 bioelectric execution.
 Integrate these three layers into every analysis.
 
+ALGORITHMIC FRAMEWORKS:
+1. Graph Reasoning (GNoME-style): Treat tissues as Spatial Graphs. Cells are nodes; \
+gap junctions and endogenous electric fields are edges. Predict the stability of a \
+bioelectric state across this graph. When analyzing connectivity, specify: node count, \
+edge type (Gj coupling, EF gradient), predicted state propagation.
+2. Structural Grammars (AlphaFold-style): Analyze the "shape" of voltage gradients. \
+Predict how a specific ion channel density distribution leads to a 3D morphological \
+"checksum" — the target morphology that validates pattern integrity.
+3. Multi-Agent Research (Coscientist-style): Operate as four internal agents:
+   - The Scraper: extract raw data (variables, measurements, citations) from sources.
+   - The Physicist: enforce Nernst Equation, conservation laws, thermodynamic \
+constraints on all theories.
+   - The Information Theorist: calculate Shannon Entropy, Channel Capacity, and error \
+rates for biological signaling channels.
+   - The Critic: attempt to falsify every hypothesis using known biological constraints.
+   Each section of your output should reflect which agent produced it.
+
+BIOLOGICAL INFORMATION MODULE (BIM) — Quantitative Proof:
+For any claimed "biological bit," you must provide or estimate:
+- State Stability (T_half): duration a Vmem shift persists before metabolic noise \
+dissipates it. T_half = R_m * C_m * ln(2).
+- Switching Energy (E_bit): ATP cost per bit-flip. \
+E_bit = ions_per_event * e * delta_V. ATP_per_flip = E_bit / 5e-20 J.
+- Error Rate: probability of stochastic bit-flip from ion channel noise.
+- Shannon Entropy: H(X) = log2(N_states) for N distinguishable stable states.
+- Channel Capacity: C = B * log2(1 + SNR) for gap junction signaling bandwidth.
+Label all estimates as [HEURISTIC] unless derived from source measurements.
+
+HARDWARE SPECIFICATION LIBRARY:
+When discussing biological computation, map to certified hardware components:
+- CPU: Nav/Kv channel arrays — switching logic gates (ms-scale gating).
+- RAM: Vmem gradient across syncytium — volatile read/write bioelectric memory.
+- SSD: Innexin-gated connectivity patterns — non-volatile anatomical memory \
+(persists through regeneration indefinitely).
+
 MULTI-DISCIPLINARY KNOWLEDGE BASE:
 1. Genomics & Synthetic Biology: CRISPR-Cas9, optogenetics, synthetic gene circuits.
 2. Cellular Biophysics: Vmem dynamics, ion channel behavior, bioelectric signaling \
@@ -181,11 +216,19 @@ V. CROSS-SPECIES NOTES
 - Compare findings across model organisms where evidence exists.
 - State where evidence transfers and where gaps remain.
 
-VI. MINIMAL WET-LAB TEST (MVP)
+VI. BIM QUANTIFICATION (when bioelectric states are discussed)
+- State Stability (T_half): estimate persistence of any claimed Vmem state.
+- Switching Energy (E_bit): ATP cost per state change.
+- Error Rate: stochastic bit-flip probability from channel noise.
+- Shannon Entropy: information content of the state space.
+- Label all estimates [HEURISTIC] unless from measured data.
+- Map components to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin).
+
+VII. MINIMAL WET-LAB TEST (MVP)
 - 4-6 step protocol for a 1-2 week baseline experiment.
 - Materials list, expected outcomes, failure modes.
 
-VII. NEXT COLLECTION QUERIES
+VIII. NEXT COLLECTION QUERIES
 - 5-10 exact PubMed/PMC/bioRxiv queries to fill the data gaps identified above."""
 
 DISCOVERY_TEMPLATE = """\
@@ -270,10 +313,29 @@ Map the biological system's regeneration to RAID-level redundancy:
 - Colony/tissue redundancy = Replication factor
 Specify which RAID level best models the organism's fault tolerance.
 
-11. CROSS-SPECIES NOTES
+11. BIM QUANTIFICATION
+For any claimed bioelectric state or "biological bit":
+- State Stability (T_half): how long does the Vmem state persist? \
+T_half = R_m * C_m * ln(2). Label [HEURISTIC] if estimated.
+- Switching Energy (E_bit): ATP cost per state change. \
+E_bit = ions_per_event * e * delta_V. ATP_per_flip = E_bit / 5e-20 J.
+- Error Rate: P(stochastic bit-flip) from ion channel noise.
+- Shannon Entropy: H(X) = log2(N_states) for the state space.
+- Channel Capacity: C = B * log2(1 + SNR) for gap junction signaling.
+Map to Hardware Library: CPU (Nav/Kv arrays), RAM (Vmem gradient), \
+SSD (Innexin connectivity patterns).
+
+12. GRAPH TOPOLOGY
+Model the tissue as a spatial graph:
+- Nodes: cell types (neoblasts, differentiated cells)
+- Edges: gap junctions (Gj coupling), endogenous EF gradients
+- Predict: state propagation speed, stability of bioelectric pattern
+- Identify: critical nodes (hub cells), bottleneck edges
+
+13. CROSS-SPECIES NOTES
 Where does the evidence transfer across organisms? Where are gaps?
 
-12. UNCERTAINTY & STRATEGIC RECOMMENDATION
+14. UNCERTAINTY & STRATEGIC RECOMMENDATION
 Explicit gaps, missing variables, conflicting evidence, what data would resolve them.
 "Low Confidence" is NOT a valid final answer. Commit to a strategic recommendation \
 with labeled assumptions and a falsification path.
@@ -909,14 +971,34 @@ class RAGPipeline:
                 continue
             elif any(
                 m in upper
-                for m in ["CROSS-SPECIES", "CROSS SPECIES", "11. CROSS"]
+                for m in [
+                    "BIM QUANTIFICATION", "11. BIM",
+                    "BIOLOGICAL BIT", "BIOLOGICAL INFORMATION",
+                ]
+            ):
+                current_section = "bim"
+                continue
+            elif any(
+                m in upper
+                for m in [
+                    "GRAPH TOPOLOGY", "12. GRAPH",
+                    "SPATIAL GRAPH",
+                ]
+            ):
+                current_section = "graph"
+                continue
+            elif any(
+                m in upper
+                for m in [
+                    "CROSS-SPECIES", "CROSS SPECIES", "13. CROSS",
+                ]
             ):
                 current_section = "cross_species"
                 continue
             elif any(
                 m in upper
                 for m in [
-                    "UNCERTAINTY", "12. UNCERTAINTY", "## UNCERTAINTY",
+                    "UNCERTAINTY", "14. UNCERTAINTY", "## UNCERTAINTY",
                     "STRATEGIC RECOMMEND",
                 ]
             ):
@@ -963,6 +1045,10 @@ class RAGPipeline:
             elif current_section == "validation":
                 validation_path.append(content)
             elif current_section == "fault_tolerance":
+                inference.append(content)
+            elif current_section == "bim":
+                inference.append(content)
+            elif current_section == "graph":
                 inference.append(content)
             elif current_section == "cross_species":
                 cross_species.append(content)

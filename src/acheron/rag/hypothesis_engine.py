@@ -131,6 +131,24 @@ Map regeneration to RAID-level redundancy:
 - Regeneration = RAID rebuild (repair from distributed bioelectric state).
 - Colony/tissue redundancy = Replication factor.
 
+ALGORITHMIC FRAMEWORKS:
+1. Graph Reasoning: Treat tissues as spatial graphs (cells=nodes, Gj/EF=edges). \
+Predict bioelectric state stability across the graph topology.
+2. Structural Grammars: Analyze voltage gradient "shape" to predict how ion \
+channel density maps to 3D morphological checksums.
+3. Multi-Agent Research: Operate as Scraper (data extraction), Physicist (Nernst, \
+thermodynamics), Information Theorist (Shannon entropy, channel capacity), and \
+Critic (falsification) — each section reflects which agent produced it.
+
+BIM QUANTIFICATION (Biological Information Module):
+For any claimed "biological bit," provide:
+- State Stability (T_half): R_m * C_m * ln(2).
+- Switching Energy (E_bit): ions_per_event * e * delta_V. ATP = E_bit / 5e-20 J.
+- Error Rate: P(stochastic bit-flip) from channel noise.
+- Shannon Entropy: H = log2(N_states). Channel Capacity: C = B * log2(1 + SNR).
+Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem gradient), SSD (Innexin).
+Label all estimates [HEURISTIC] unless from measured data.
+
 GUARDRAILS:
 - Never present hypotheses as facts.
 - Cite [1], [2], etc. for every factual claim.
@@ -223,6 +241,13 @@ FAULT TOLERANCE MAPPING
 - Regeneration = RAID rebuild (tissue repair from distributed state)
 - Specify RAID level equivalent for the organism's fault tolerance
 
+BIM QUANTIFICATION
+For any claimed bioelectric state or "biological bit":
+- State Stability (T_half), Switching Energy (E_bit), Error Rate
+- Shannon Entropy: H = log2(N_states)
+- Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin)
+- Label all estimates [HEURISTIC] unless from measured data.
+
 UNCERTAINTY
 - Explicit gaps, missing variables, conflicting evidence
 - "Low Confidence" is NOT a final answer — commit to a recommendation
@@ -286,6 +311,13 @@ FAULT TOLERANCE MAPPING
 - Regeneration = RAID rebuild (tissue repair from distributed state)
 - Colony/tissue redundancy = Replication factor
 - Specify RAID level equivalent for the system's fault tolerance
+
+BIM QUANTIFICATION
+For any proposed bioelectric computation:
+- State Stability (T_half), Switching Energy (E_bit), Error Rate
+- Shannon Entropy, Channel Capacity for the signaling channels
+- Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin)
+- Label all estimates [HEURISTIC] unless from measured data.
 
 UNCERTAINTY & STRATEGIC RECOMMENDATION
 - "Low Confidence" is NOT a final answer — commit to a recommendation
@@ -370,6 +402,8 @@ def parse_evidence_graph(raw_output: str) -> EvidenceGraph:
                 "SUBSTRATE SELECTION", "BIGR",
                 "PROTOCOL SPECIFICATION", "FAULT TOLERANCE",
                 "HEURISTIC BASELINE", "STRATEGIC RECOMMEND",
+                "BIM QUANTIFICATION", "GRAPH TOPOLOGY",
+                "HARDWARE SPEC",
             ]
         ):
             if current_claim:
@@ -513,6 +547,8 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
                 "SYSTEM DESIGN", "VALIDATION PATH", "BIOELECTRIC SCHEMATIC",
                 "SUBSTRATE SELECTION", "PROTOCOL SPECIFICATION",
                 "FAULT TOLERANCE", "STRATEGIC RECOMMEND",
+                "BIM QUANTIFICATION", "GRAPH TOPOLOGY",
+                "HARDWARE SPEC",
             ]
         ):
             if current:
