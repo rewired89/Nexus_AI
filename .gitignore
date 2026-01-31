@@ -21,11 +21,11 @@ env/
 *.swp
 *.swo
 
-# Data directories (large files)
-data/papers/pdf/
-data/papers/raw/
-data/vectorstore/chroma/
-data/vectorstore/backup/
+# Data directories (large files, local to each machine)
+data/papers/
+data/vectorstore/
+data/nxml/
+data/ledger/
 
 # Environment and secrets
 .env
