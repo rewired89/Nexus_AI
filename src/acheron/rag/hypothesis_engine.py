@@ -208,24 +208,47 @@ CLAIM RELATIONSHIPS
 (Same structured format as MODE 1)
 
 HYPOTHESES
-Generate at least 2 alternative hypotheses plus a leading hypothesis. For EACH:
+Generate at least 2 alternative hypotheses plus a leading hypothesis.
+Write for a non-expert but technical founder. No academic tone. No equations \
+unless asked. No invented values.
 
-HYPOTHESIS: [H1] [statement]
-RANK: [1, 2, 3...]
-EXPLANATORY_POWER: [0.0-1.0] (covers how many supported claims)
-SIMPLICITY: [0.0-1.0] (fewest extra assumptions)
-CONSISTENCY: [0.0-1.0] (avoids contradicting strong evidence)
-MECHANISTIC_PLAUSIBILITY: [0.0-1.0] (fits known biology/physics/control theory)
-RATIONALE: [brief explanation]
-PREDICTIONS: what would we expect to observe if true
-FALSIFIERS: what result would falsify this
-MINIMAL_TEST: minimal experiment or observation to test (high-level, conceptual)
-CONFIDENCE: [0-100]
-CONFIDENCE_JUSTIFICATION: [brief reason]
-ASSUMPTIONS: A1, A2, ...
-KNOWN_UNKNOWNS: what we don't know that matters
-FAILURE_MODES: most likely ways this hypothesis could be wrong
-REFS: [1], [2], ...
+For EACH hypothesis, use EXACTLY this format:
+
+HYPOTHESIS: [H1] [one-sentence title]
+
+THE IDEA IN PLAIN ENGLISH:
+3-6 sentences. Use simple analogies. Explain the mechanism as if describing \
+it to someone who builds software, not someone who reads journals.
+
+WHAT MUST BE TRUE:
+- Bullet list of assumptions. Each is a testable claim.
+
+WHAT WE ALREADY HAVE EVIDENCE FOR:
+- ONLY cite what the retrieved sources actually say. Reference [1], [2], etc.
+- Do NOT infer beyond what sources state.
+
+WHAT IS STILL UNKNOWN:
+- Explicit measurements missing. For each, state the experiment needed.
+- Numbers: ONLY include numbers if they come from cited planarian sources; \
+otherwise write "UNKNOWN — requires measurement."
+
+FIRST TEST TO VALIDATE (5-8 steps):
+Step 1: ...
+Step 2: ...
+(Concrete, actionable. Specify organism, reagents, readout, timeline.)
+
+WHAT RESULT WOULD PROVE IT WRONG:
+- Specific experimental outcome that falsifies this hypothesis.
+
+NEXT 5 QUESTIONS I SHOULD ASK:
+1. ...
+2. ...
+3. ...
+4. ...
+5. ...
+(Questions designed to reduce the biggest uncertainties for THIS hypothesis.)
+
+---
 
 SUBSTRATE SELECTION MATRIX
 For hypotheses involving experimental testing, evaluate model organisms:
@@ -241,7 +264,7 @@ For the recommended experimental approach:
 - Write Method: (optogenetic stimulation, ionophore bath, galvanotaxis, etc.)
 - Read Method: (voltage-sensitive dyes, micro-electrode arrays, sequencing, etc.)
 - Logic Gate Equivalent: how the substrate performs NOT/AND via bioelectric flux
-- Estimated SNR: signal-to-noise ratio for the read method
+- Estimated SNR: ONLY from citations; otherwise "UNKNOWN — requires measurement"
 - Error Correction: biological redundancy mechanism
 
 FAULT TOLERANCE MAPPING
@@ -280,8 +303,11 @@ CLAIM RELATIONSHIPS
 (Same structured format as MODE 1)
 
 HYPOTHESES
-Generate testable hypotheses underlying the proposed design. For EACH:
-(Same structured format as MODE 2)
+Generate testable hypotheses underlying the proposed design.
+Use the same plain English format as MODE 2 (HYPOTHESIS: title, THE IDEA IN \
+PLAIN ENGLISH, WHAT MUST BE TRUE, WHAT WE ALREADY HAVE EVIDENCE FOR, \
+WHAT IS STILL UNKNOWN, FIRST TEST TO VALIDATE, WHAT RESULT WOULD PROVE IT \
+WRONG, NEXT 5 QUESTIONS I SHOULD ASK).
 
 SYSTEM DESIGN
 Describe the proposed architecture/protocol/system with explicit labels for:
@@ -570,15 +596,44 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
         if not in_hypotheses or not stripped:
             continue
 
-        # Parse hypothesis fields
+        # Track which sub-section of a hypothesis we're accumulating into.
+        # This supports both old structured format and new plain-English format.
+
+        # --- New hypothesis entry ---
         if stripped.startswith("HYPOTHESIS:") or stripped.startswith("- HYPOTHESIS:"):
             if current:
                 hypotheses.append(_build_hypothesis(current, len(hypotheses)))
-            current = {"statement": stripped.split(":", 1)[1].strip()}
+            current = {"statement": stripped.split(":", 1)[1].strip(), "_section": ""}
         elif stripped.startswith("[H") or re.match(r"^H\d+[:\.]", stripped):
             if current:
                 hypotheses.append(_build_hypothesis(current, len(hypotheses)))
-            current = {"statement": re.sub(r"^\[?H\d+\]?[:\.\s]*", "", stripped).strip()}
+            current = {
+                "statement": re.sub(r"^\[?H\d+\]?[:\.\s]*", "", stripped).strip(),
+                "_section": "",
+            }
+
+        # --- Plain-English section headers (new format) ---
+        elif "THE IDEA IN PLAIN ENGLISH" in upper:
+            current["_section"] = "rationale"
+        elif "WHAT MUST BE TRUE" in upper:
+            current["_section"] = "assumptions"
+            current.setdefault("assumptions", [])
+        elif "WHAT WE ALREADY HAVE EVIDENCE" in upper:
+            current["_section"] = "evidence_for"
+            current.setdefault("predictions", [])  # store evidence items here
+        elif "WHAT IS STILL UNKNOWN" in upper:
+            current["_section"] = "known_unknowns"
+            current.setdefault("known_unknowns", [])
+        elif "FIRST TEST TO VALIDATE" in upper or "FIRST TEST:" in upper:
+            current["_section"] = "minimal_test"
+        elif "WHAT RESULT WOULD PROVE IT WRONG" in upper:
+            current["_section"] = "falsifiers"
+            current.setdefault("falsifiers", [])
+        elif "NEXT 5 QUESTIONS" in upper or "NEXT FIVE QUESTIONS" in upper:
+            current["_section"] = "next_questions"
+            current.setdefault("next_questions", [])
+
+        # --- Old structured format fields (backward-compatible) ---
         elif "RANK:" in upper:
             m = re.search(r"(\d+)", stripped)
             if m:
@@ -601,13 +656,16 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
                 current["mechanistic_plausibility"] = float(m.group(1))
         elif "RATIONALE:" in upper:
             current["rationale"] = stripped.split(":", 1)[1].strip()
-        elif "PREDICTION" in upper and ":" in stripped:
+        elif (
+            "PREDICTION" in upper and ":" in stripped
+            and current.get("_section") != "evidence_for"
+        ):
             preds = current.get("predictions", [])
             val = stripped.split(":", 1)[1].strip()
             if val:
                 preds.append(val)
             current["predictions"] = preds
-        elif "FALSIF" in upper and ":" in stripped:
+        elif "FALSIF" in upper and ":" in stripped and current.get("_section") != "falsifiers":
             falsif = current.get("falsifiers", [])
             val = stripped.split(":", 1)[1].strip()
             if val:
@@ -621,7 +679,7 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
                 current["confidence"] = int(m.group(1))
         elif "CONFIDENCE_JUSTIFICATION:" in upper:
             current["confidence_justification"] = stripped.split(":", 1)[1].strip()
-        elif "ASSUMPTION" in upper and ":" in stripped:
+        elif "ASSUMPTION" in upper and ":" in stripped and current.get("_section") != "assumptions":
             assumptions = stripped.split(":", 1)[1].strip()
             current["assumptions"] = [
                 a.strip() for a in re.split(r"[;,]|A\d+\.?\s*", assumptions) if a.strip()
@@ -634,11 +692,45 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
             current["failure_modes"] = [m.strip() for m in modes.split(";") if m.strip()]
         elif upper.startswith("REFS:") or upper.startswith("- REFS:"):
             current["refs"] = re.findall(r"\[(\d+)\]", stripped)
+
+        # --- Accumulate content into the current sub-section ---
         elif current and "statement" in current:
-            # Continuation lines for multi-line predictions/falsifiers
+            section = current.get("_section", "")
+            # Bullet or numbered line
+            content_line = ""
             if stripped.startswith("- "):
+                content_line = stripped[2:].strip()
+            elif re.match(r"^(?:Step\s+)?\d+[.:)\s]", stripped):
+                content_line = re.sub(r"^(?:Step\s+)?\d+[.:)\s]+", "", stripped).strip()
+            elif stripped.startswith("* "):
+                content_line = stripped[2:].strip()
+
+            if section == "rationale":
+                # Accumulate multi-line rationale
+                existing = current.get("rationale", "")
+                current["rationale"] = (existing + " " + stripped).strip() if existing else stripped
+            elif section == "assumptions" and content_line:
+                current.setdefault("assumptions", []).append(content_line)
+            elif section == "evidence_for" and content_line:
+                # Store evidence items; also extract refs
+                current.setdefault("predictions", []).append(content_line)
+                found_refs = re.findall(r"\[(\d+)\]", content_line)
+                if found_refs:
+                    current.setdefault("refs", []).extend(found_refs)
+            elif section == "known_unknowns" and content_line:
+                current.setdefault("known_unknowns", []).append(content_line)
+            elif section == "minimal_test":
+                # Accumulate test steps
+                step = content_line or stripped
+                existing = current.get("minimal_test", "")
+                current["minimal_test"] = (existing + "; " + step).strip("; ") if existing else step
+            elif section == "falsifiers" and content_line:
+                current.setdefault("falsifiers", []).append(content_line)
+            elif section == "next_questions" and content_line:
+                current.setdefault("next_questions", []).append(content_line)
+            elif section == "" and stripped.startswith("- "):
+                # Fallback: try to assign to the most recent list field
                 val = stripped.lstrip("- ")
-                # Try to assign to the most recent list field
                 for field in ["predictions", "falsifiers", "assumptions",
                               "known_unknowns", "failure_modes"]:
                     if field in current and isinstance(current[field], list):
@@ -653,12 +745,23 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
 
 
 def _build_hypothesis(data: dict, idx: int) -> RankedHypothesis:
-    """Build a RankedHypothesis from parsed fields."""
+    """Build a RankedHypothesis from parsed fields.
+
+    Handles both old structured format and new plain-English format.
+    In the new format, "Next 5 Questions" are folded into known_unknowns
+    since they represent the biggest uncertainties to resolve.
+    """
     ep = min(data.get("explanatory_power", 0.5), 1.0)
     simp = min(data.get("simplicity", 0.5), 1.0)
     cons = min(data.get("consistency", 0.5), 1.0)
     mech = min(data.get("mechanistic_plausibility", 0.5), 1.0)
     overall = (ep * 0.3 + simp * 0.2 + cons * 0.3 + mech * 0.2)
+
+    # Merge next_questions into known_unknowns (both represent uncertainties)
+    known_unknowns = data.get("known_unknowns", [])
+    next_questions = data.get("next_questions", [])
+    if next_questions:
+        known_unknowns = known_unknowns + next_questions
 
     return RankedHypothesis(
         hypothesis_id=f"H{idx + 1}",
@@ -676,7 +779,7 @@ def _build_hypothesis(data: dict, idx: int) -> RankedHypothesis:
         confidence=min(data.get("confidence", 0), 100),
         confidence_justification=data.get("confidence_justification", ""),
         assumptions=data.get("assumptions", []),
-        known_unknowns=data.get("known_unknowns", []),
+        known_unknowns=known_unknowns,
         failure_modes=data.get("failure_modes", []),
         supporting_refs=[f"[{r}]" for r in data.get("refs", [])],
     )

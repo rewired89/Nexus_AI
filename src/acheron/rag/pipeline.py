@@ -213,11 +213,16 @@ II. DATA GAPS
 - For each gap, state what measurement is needed and in what organism/tissue.
 
 III. HYPOTHESES (max 3)
-- Each tagged [SPECULATION].
-- Each must include:
-  a) Causal chain: [ion pump/channel] -> [Vmem/EF change] -> [pathway] -> [outcome]
-  b) Required missing measurements
-  c) 1 falsification experiment (what result would disprove this)
+For EACH hypothesis, write in plain English for a technical non-expert:
+- HYPOTHESIS: one-sentence title, tagged [SPECULATION].
+- THE IDEA IN PLAIN ENGLISH: 3-6 sentences using simple analogies.
+- WHAT MUST BE TRUE: bullet list of testable assumptions.
+- WHAT WE ALREADY HAVE EVIDENCE FOR: cite ONLY what sources say.
+- WHAT IS STILL UNKNOWN: missing measurements; state experiment needed.
+  Numbers ONLY from cited planarian sources; else "UNKNOWN — requires measurement."
+- FIRST TEST TO VALIDATE: 5-8 concrete steps (organism, reagent, readout).
+- WHAT RESULT WOULD PROVE IT WRONG: specific falsification outcome.
+- NEXT 5 QUESTIONS I SHOULD ASK: questions to reduce biggest uncertainties.
 
 IV. BIOELECTRIC SCHEMATIC
 - BIGR layers: ROM (genetic) / RAM (bioelectric) / Interface (proteomic)
@@ -291,11 +296,17 @@ When hypotheses involve experimental testing, evaluate model organisms:
 Rate each as Low/Medium/High based on sources. If no data, state "No data".
 
 6. HYPOTHESES
-Generate testable hypotheses from the patterns. For each hypothesis state:
-- Prior Confidence: low/medium/high (based on evidence density)
-- Predicted Impact: what changes in our understanding if this is true
-- Assumptions: what must hold for this hypothesis to be valid
-- Supporting references: [1], [2], etc.
+Generate testable hypotheses from the patterns. Write in plain English for a \
+technical non-expert. For EACH hypothesis use this format:
+- HYPOTHESIS: one-sentence title.
+- THE IDEA IN PLAIN ENGLISH: 3-6 sentences, simple analogies, no academic tone.
+- WHAT MUST BE TRUE: bullet list of testable assumptions.
+- WHAT WE ALREADY HAVE EVIDENCE FOR: cite ONLY what sources say, refs [1], [2].
+- WHAT IS STILL UNKNOWN: missing measurements + needed experiments. \
+Numbers ONLY from cited planarian sources; else "UNKNOWN — requires measurement."
+- FIRST TEST TO VALIDATE: 5-8 concrete steps.
+- WHAT RESULT WOULD PROVE IT WRONG: falsification outcome.
+- NEXT 5 QUESTIONS I SHOULD ASK: questions to reduce biggest uncertainties.
 
 7. BIOELECTRIC SCHEMATIC
 Describe the hypothesized bioelectric circuit in a structured format:
@@ -921,6 +932,8 @@ class RAGPipeline:
         cross_species: list[str] = []
 
         current_section = ""
+        # Buffer for accumulating multi-line hypothesis blocks
+        _hyp_buffer: list[str] = []
 
         for line in raw_output.split("\n"):
             stripped = line.strip()
@@ -1046,11 +1059,21 @@ class RAGPipeline:
             elif current_section == "substrate":
                 cross_species.append(content)
             elif current_section == "hypotheses":
-                hyp = _try_parse_hypothesis(content)
-                if hyp:
-                    hypotheses.append(hyp)
-                else:
-                    speculation.append(content)
+                # Detect hypothesis boundaries (HYPOTHESIS: or [H1] markers)
+                if (
+                    stripped.upper().startswith("HYPOTHESIS:")
+                    or stripped.upper().startswith("- HYPOTHESIS:")
+                    or re.match(r"^\[?H\d+\]?[:\.]", stripped)
+                ):
+                    # Flush previous buffer
+                    if _hyp_buffer:
+                        hyp = _try_parse_hypothesis("\n".join(_hyp_buffer))
+                        if hyp:
+                            hypotheses.append(hyp)
+                        else:
+                            speculation.extend(_hyp_buffer)
+                        _hyp_buffer = []
+                _hyp_buffer.append(content)
             elif current_section == "schematic":
                 schematic_lines.append(content)
             elif current_section == "protocol":
@@ -1067,6 +1090,14 @@ class RAGPipeline:
                 cross_species.append(content)
             elif current_section == "uncertainty":
                 uncertainty.append(content)
+
+        # Flush any remaining hypothesis buffer
+        if _hyp_buffer:
+            hyp = _try_parse_hypothesis("\n".join(_hyp_buffer))
+            if hyp:
+                hypotheses.append(hyp)
+            else:
+                speculation.extend(_hyp_buffer)
 
         settings = get_settings()
         return DiscoveryResult(
@@ -1124,39 +1155,114 @@ def _try_parse_variable(text: str) -> StructuredVariable | None:
 
 
 def _try_parse_hypothesis(text: str) -> Hypothesis | None:
-    """Attempt to parse a hypothesis with optional confidence, predicted impact, assumptions."""
+    """Parse a hypothesis from text (single-line or multi-line plain English format).
+
+    Handles both:
+    - Old format: single line with inline confidence/impact/assumptions
+    - New format: multi-line block with sub-section headers (THE IDEA IN PLAIN
+      ENGLISH, WHAT MUST BE TRUE, WHAT IS STILL UNKNOWN, etc.)
+    """
     if len(text) < 10:
         return None
 
+    # --- Extract statement (first HYPOTHESIS: line or first line) ---
+    statement = text
+    lines = text.split("\n")
+    for line in lines:
+        stripped = line.strip().upper()
+        if stripped.startswith("HYPOTHESIS:") or stripped.startswith("- HYPOTHESIS:"):
+            statement = line.strip().split(":", 1)[1].strip()
+            break
+        elif re.match(r"^\[?H\d+\]?[:\.]", line.strip()):
+            statement = re.sub(r"^\[?H\d+\]?[:\.\s]*", "", line.strip()).strip()
+            break
+    else:
+        # No explicit marker — use the full text (old single-line format)
+        statement = lines[0].strip() if lines else text
+
+    # --- Confidence ---
     confidence = "low"
     lower = text.lower()
     if "high confidence" in lower or "(high)" in lower or "prior confidence: high" in lower:
         confidence = "high"
-    elif "medium confidence" in lower or "(medium)" in lower or "prior confidence: medium" in lower:
+    elif (
+        "medium confidence" in lower
+        or "(medium)" in lower
+        or "prior confidence: medium" in lower
+    ):
         confidence = "medium"
 
+    # --- Refs ---
     refs = []
     for match in re.finditer(r"\[(\d+)\]", text):
         refs.append(match.group(0))
 
-    # Try to extract predicted impact if present
+    # --- Parse sub-sections from multi-line plain English format ---
     predicted_impact = ""
-    impact_match = re.search(
-        r"predicted impact[:\s]+(.+?)(?:\.|$)", text, re.IGNORECASE
-    )
-    if impact_match:
-        predicted_impact = impact_match.group(1).strip()
-
-    # Try to extract assumptions if present
     assumptions: list[str] = []
-    assumption_match = re.search(
-        r"assumption[s]?[:\s]+(.+?)(?:\.|$)", text, re.IGNORECASE
-    )
-    if assumption_match:
-        assumptions = [a.strip() for a in assumption_match.group(1).split(";") if a.strip()]
+    current_sub = ""
+
+    for line in lines:
+        stripped = line.strip()
+        upper_line = stripped.upper()
+
+        # Detect sub-section headers
+        if "THE IDEA IN PLAIN ENGLISH" in upper_line:
+            current_sub = "idea"
+            continue
+        elif "WHAT MUST BE TRUE" in upper_line:
+            current_sub = "assumptions"
+            continue
+        elif "WHAT WE ALREADY HAVE EVIDENCE" in upper_line:
+            current_sub = "evidence_for"
+            continue
+        elif "WHAT IS STILL UNKNOWN" in upper_line:
+            current_sub = "unknowns"
+            continue
+        elif "FIRST TEST TO VALIDATE" in upper_line or "FIRST TEST:" in upper_line:
+            current_sub = "test"
+            continue
+        elif "WHAT RESULT WOULD PROVE IT WRONG" in upper_line:
+            current_sub = "falsif"
+            continue
+        elif "NEXT 5 QUESTIONS" in upper_line or "NEXT FIVE QUESTIONS" in upper_line:
+            current_sub = "questions"
+            continue
+
+        # Accumulate into sub-sections
+        bullet = stripped.lstrip("- *").strip()
+        if not bullet:
+            continue
+
+        if current_sub == "idea":
+            if predicted_impact:
+                predicted_impact += " " + stripped
+            else:
+                predicted_impact = stripped
+        elif current_sub == "assumptions" and bullet:
+            assumptions.append(bullet)
+        elif current_sub == "unknowns" and bullet:
+            assumptions.append(f"[UNKNOWN] {bullet}")
+
+    # --- Fallback: old single-line format parsing ---
+    if not predicted_impact:
+        impact_match = re.search(
+            r"predicted impact[:\s]+(.+?)(?:\.|$)", text, re.IGNORECASE
+        )
+        if impact_match:
+            predicted_impact = impact_match.group(1).strip()
+
+    if not assumptions:
+        assumption_match = re.search(
+            r"assumption[s]?[:\s]+(.+?)(?:\.|$)", text, re.IGNORECASE
+        )
+        if assumption_match:
+            assumptions = [
+                a.strip() for a in assumption_match.group(1).split(";") if a.strip()
+            ]
 
     return Hypothesis(
-        statement=text,
+        statement=statement,
         supporting_refs=refs,
         confidence=confidence,
         predicted_impact=predicted_impact,
