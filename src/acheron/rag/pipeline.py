@@ -118,19 +118,30 @@ Layer 3 (Discovery): Comparative analysis, cross-species reasoning, pattern \
 detection, hypothesis generation. Every discovery output must include a bioelectric \
 schematic and a validation path.
 
-OUTPUT RULES:
+SCIENCE-FIRST OUTPUT RULES:
+- Every output sentence must be tagged:
+  [EVIDENCE] — directly supported by retrieved sources (cite PMID/DOI).
+  [INFERENCE] — logical bridge across sources, no new facts introduced.
+  [SPECULATION] — hypothesis proposal; must include a falsification plan.
+  [DATA GAP] — missing measurement; include targeted collection queries.
 - Structured, stepwise output. No motivational language.
-- Separate EVIDENCE, INFERENCE, and SPECULATION using labeled sections.
-- Cite [1], [2], etc. for every factual claim.
-- For every hypothesis: Prior Confidence, Predicted Impact, Assumptions.
+- Cite [1], [2], etc. for every factual claim (PMID or DOI where available).
+- For every hypothesis: causal chain, required missing measurements, \
+1 falsification experiment.
 - Cross-species comparison is mandatory when evidence spans organisms.
+- If organism-specific sources are absent, output [DATA GAP] and generate \
+targeted collection queries instead of filling with analogies.
+- Never output numeric Vmem/EF/ion concentrations unless retrieved from a \
+source. If unknown: "unknown; requires measurement".
 - You are a research engine, not a chatbot.
 
 CONSTRAINTS:
 - No diagnosis or treatment advice.
 - Prefer public, de-identified data.
 - If sources are insufficient, state so directly and identify missing data.
-- Prefer "I cannot support that with sources" over inventing details."""
+- Prefer "I cannot support that with sources" over inventing details.
+- "Low Confidence" is NOT a valid final answer. Commit to a recommendation \
+with labeled assumptions and a falsification path."""
 
 QUERY_TEMPLATE = """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
@@ -141,50 +152,41 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 
 Query: {query}
 
-Respond with the following mandatory structure:
+Respond with the following mandatory structure. Tag EVERY sentence with \
+[EVIDENCE], [INFERENCE], [SPECULATION], or [DATA GAP].
 
-EVIDENCE
-- Statements directly supported by the sources above (cite each with [1], [2], etc.)
+I. EVIDENCE SNAPSHOT
+- Bullet list of findings directly from sources. Each tagged [EVIDENCE].
+- Cite PMID/DOI for each claim. Format: "[EVIDENCE] claim text [1] (PMID:xxx)."
+- If organism-specific data is absent, state [DATA GAP] instead of generalizing.
 
-INFERENCE
-- Logical derivations from the evidence (cite supporting sources)
+II. DATA GAPS
+- Bullet list of missing measurements, tagged [DATA GAP].
+- For each gap, state what measurement is needed and in what organism/tissue.
 
-SPECULATION
-- Hypotheses or connections not directly stated in sources
-- For each, state confidence level (low/medium/high)
+III. HYPOTHESES (max 3)
+- Each tagged [SPECULATION].
+- Each must include:
+  a) Causal chain: [ion pump/channel] -> [Vmem/EF change] -> [pathway] -> [outcome]
+  b) Required missing measurements
+  c) 1 falsification experiment (what result would disprove this)
 
-BIOELECTRIC SCHEMATIC
-- Describe the bioelectric circuit relevant to the query using BIGR layers:
-  ROM (genetic): relevant genes/pathways (Wnt, Notum, connexins, etc.)
-  RAM (bioelectric): Vmem/EF/Gj changes and their causal roles
-  Interface (proteomic): translation between gene expression and bioelectric state
+IV. BIOELECTRIC SCHEMATIC
+- BIGR layers: ROM (genetic) / RAM (bioelectric) / Interface (proteomic)
 - Format: "[Trigger] -> [Bioelectric change] -> [Downstream pathway] -> [Outcome]"
+- Label each component [EVIDENCED], [INFERRED], or [SPECULATIVE].
 - If insufficient data, state what is missing. Do NOT invent Vmem values.
-- Include logic gate equivalents where applicable (NOT/AND via bioelectric flux).
 
-HEURISTIC BASELINE
-- When Vmem data is missing for a species, calculate E_ion using the Nernst Equation:
-  E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
-- Use nearest phylogenetic neighbor concentrations if exact values are unknown.
-- Label ALL calculated values as [HEURISTIC].
-
-CROSS-SPECIES NOTES
-- Compare findings across model organisms where evidence exists:
-  Planarians, Xenopus, Physarum, Mammalian systems.
+V. CROSS-SPECIES NOTES
+- Compare findings across model organisms where evidence exists.
 - State where evidence transfers and where gaps remain.
 
-PROTOCOL SPECIFICATION (when experimental approaches are relevant)
-- Write Method: how to write data/state into the substrate
-- Read Method: how to read data/state from the substrate
-- Estimated SNR for the read method
-- Error Correction: biological redundancy and RAID-level equivalent
+VI. MINIMAL WET-LAB TEST (MVP)
+- 4-6 step protocol for a 1-2 week baseline experiment.
+- Materials list, expected outcomes, failure modes.
 
-UNCERTAINTY & STRATEGIC RECOMMENDATION
-- What the sources do not address
-- Where data is insufficient
-- Conflicting findings between sources
-- "Low Confidence" is NOT a valid final answer — commit to a recommendation \
-with labeled assumptions and a falsification path."""
+VII. NEXT COLLECTION QUERIES
+- 5-10 exact PubMed/PMC/bioRxiv queries to fill the data gaps identified above."""
 
 DISCOVERY_TEMPLATE = """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
@@ -195,6 +197,7 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 
 Research query: {query}
 
+Tag EVERY output sentence with [EVIDENCE], [INFERENCE], [SPECULATION], or [DATA GAP].
 Execute the discovery loop with ALL of the following mandatory sections:
 
 1. EVIDENCE EXTRACTION
@@ -391,31 +394,45 @@ class RAGPipeline:
     ) -> DiscoveryResult:
         """Execute the full discovery loop.
 
-        1. Retrieve relevant evidence
-        2. Extract variables
-        3. Compare patterns
-        4. Generate testable hypotheses
-        5. Propose low-cost validation strategies
-        6. Return structured result for ledger logging
+        Science-First pipeline stages:
+        A. Parse query into entities/measurements/constraints
+        B. Retrieve from local corpus
+        C. Score and filter evidence (organism match, primary data, etc.)
+        D. Generate structured output with claim extraction
+        E. Synthesize: evidence, data gaps, hypotheses, collection queries
         """
+        from acheron.rag.query_parser import generate_collection_queries, parse_query
+
         n = n_results or self.n_retrieve
 
-        # Layer 2 — retrieve
+        # Stage A — Query understanding
+        parsed = parse_query(question)
+        logger.info("Query parsed: %s", parsed.summary())
+
+        # Stage B — Retrieve
         results = self.store.search(
             query=question, n_results=n, filter_source=filter_source
         )
 
         if not results:
+            collection_queries = generate_collection_queries(parsed)
             return DiscoveryResult(
                 query=question,
                 evidence=["No sources retrieved."],
-                uncertainty_notes=["Library contains no material for this query."],
+                uncertainty_notes=[
+                    "Library contains no material for this query.",
+                    "Suggested collection queries:",
+                    *[f"  - {q}" for q in collection_queries],
+                ],
                 model_used=self.settings.resolved_llm_model,
             )
 
-        top_results = self._select_context(results)
+        # Stage C — Score and filter (via _select_context with science-first)
+        top_results = self._select_context(
+            results, target_organism=parsed.organism_constraint
+        )
 
-        # Layer 3 — discovery compute
+        # Stage D+E — Discovery compute
         context_str = self._format_context(top_results)
         user_prompt = DISCOVERY_TEMPLATE.format(context=context_str, query=question)
         raw_output = self._generate(user_prompt, max_tokens=3000)
@@ -599,9 +616,45 @@ class RAGPipeline:
     # ------------------------------------------------------------------
     # Internal — context selection
     # ------------------------------------------------------------------
-    def _select_context(self, results: list[QueryResult]) -> list[QueryResult]:
-        """Select the best passages for context, deduplicating by paper."""
-        sorted_results = sorted(results, key=lambda r: r.relevance_score, reverse=True)
+    def _select_context(
+        self,
+        results: list[QueryResult],
+        target_organism: str = "",
+    ) -> list[QueryResult]:
+        """Select the best passages for context, deduplicating by paper.
+
+        When SCIENCE_FIRST_MODE is enabled, uses the evidence scoring
+        function (Stage C) instead of raw vector similarity.
+        """
+        settings = get_settings()
+        organism = target_organism or settings.organism_strict
+
+        if settings.science_first_mode:
+            from acheron.rag.science_filter import rank_and_filter
+
+            strict = organism != "any"
+            scored = rank_and_filter(
+                results,
+                target_organism=organism if organism != "any" else "planarian",
+                top_k=self.n_context,
+                strict_organism=strict,
+            )
+            if scored:
+                return [s.result for s in scored]
+            # Fallback: if strict filtering returned nothing, use non-strict
+            scored = rank_and_filter(
+                results,
+                target_organism=organism if organism != "any" else "planarian",
+                top_k=self.n_context,
+                strict_organism=False,
+            )
+            if scored:
+                return [s.result for s in scored]
+
+        # Fallback: original selection logic
+        sorted_results = sorted(
+            results, key=lambda r: r.relevance_score, reverse=True
+        )
 
         selected: list[QueryResult] = []
         papers_included: dict[str, int] = {}
@@ -714,25 +767,44 @@ class RAGPipeline:
                 continue
 
             upper = stripped.upper()
-            if any(marker in upper for marker in ["EVIDENCE", "## EVIDENCE", "**EVIDENCE"]):
+            if any(
+                marker in upper
+                for marker in [
+                    "EVIDENCE SNAPSHOT", "I. EVIDENCE",
+                    "EVIDENCE", "## EVIDENCE", "**EVIDENCE",
+                ]
+            ):
                 if "EXTRACTION" not in upper:
                     current = evidence
                     continue
-            if any(marker in upper for marker in ["INFERENCE", "## INFERENCE", "**INFERENCE"]):
+            if any(
+                marker in upper
+                for marker in [
+                    "DATA GAP", "II. DATA GAP", "II. WHAT WE",
+                ]
+            ):
+                current = None  # captured in raw answer
+                continue
+            if any(
+                marker in upper
+                for marker in ["INFERENCE", "## INFERENCE", "**INFERENCE"]
+            ):
                 current = inference
                 continue
             if any(
                 marker in upper
-                for marker in ["SPECULATION", "## SPECULATION", "**SPECULATION"]
+                for marker in [
+                    "HYPOTHES", "III. HYPOTHES",
+                    "SPECULATION", "## SPECULATION", "**SPECULATION",
+                ]
             ):
                 current = speculation
                 continue
             if any(
                 marker in upper
                 for marker in [
-                    "BIOELECTRIC SCHEMATIC",
-                    "## BIOELECTRIC",
-                    "**BIOELECTRIC",
+                    "BIOELECTRIC SCHEMATIC", "IV. BIOELECTRIC",
+                    "## BIOELECTRIC", "**BIOELECTRIC",
                 ]
             ):
                 current = schematic_lines
@@ -740,11 +812,11 @@ class RAGPipeline:
             if any(
                 marker in upper
                 for marker in [
-                    "UNCERTAINTY",
-                    "## UNCERTAINTY",
-                    "**UNCERTAINTY",
-                    "VALIDATION",
-                    "## VALIDATION",
+                    "CROSS-SPECIES", "V. CROSS",
+                    "UNCERTAINTY", "## UNCERTAINTY", "**UNCERTAINTY",
+                    "VALIDATION", "## VALIDATION",
+                    "MINIMAL WET-LAB", "VI. MINIMAL",
+                    "NEXT COLLECTION", "VII. NEXT",
                 ]
             ):
                 current = None  # captured in raw answer
@@ -846,6 +918,15 @@ class RAGPipeline:
                 for m in [
                     "UNCERTAINTY", "12. UNCERTAINTY", "## UNCERTAINTY",
                     "STRATEGIC RECOMMEND",
+                ]
+            ):
+                current_section = "uncertainty"
+                continue
+            elif any(
+                m in upper
+                for m in [
+                    "MINIMAL WET-LAB", "MINIMAL VIABLE",
+                    "DATA GAP", "NEXT COLLECTION",
                 ]
             ):
                 current_section = "uncertainty"

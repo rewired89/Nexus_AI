@@ -70,6 +70,24 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO", alias="ACHERON_LOG_LEVEL")
 
+    # Science-First Mode flags
+    science_first_mode: bool = Field(
+        default=True, alias="ACHERON_SCIENCE_FIRST",
+        description="Enforce strict evidence tagging and planarian-first defaults",
+    )
+    fetch_mode: str = Field(
+        default="off", alias="ACHERON_FETCH_MODE",
+        description="Live fetch: 'off' (generate queries only) or 'on' (auto-fetch)",
+    )
+    organism_strict: str = Field(
+        default="planarian", alias="ACHERON_ORGANISM_STRICT",
+        description="Organism scope: 'planarian' (strict) or 'any' (cross-species)",
+    )
+    max_speculation: int = Field(
+        default=3, alias="ACHERON_MAX_SPECULATION",
+        description="Maximum number of speculative hypotheses (0-3)",
+    )
+
     model_config = {
         "env_file": str(_PROJECT_ROOT / ".env"),
         "env_file_encoding": "utf-8",
