@@ -157,6 +157,20 @@ class TestIonProfile:
         assert PLANARIAN_NEOBLAST_HEURISTIC.source != ""
         assert PHYSARUM.source != ""
 
+    def test_xenopus_is_evidenced(self):
+        """Xenopus profile should be marked as EVIDENCED."""
+        assert XENOPUS_OOCYTE.evidence_status == "[EVIDENCED]"
+
+    def test_planarian_is_data_gap(self):
+        """Planarian heuristic profile should be marked as DATA GAP."""
+        assert PLANARIAN_NEOBLAST_HEURISTIC.evidence_status == "[DATA GAP]"
+        assert "DATA GAP" in PLANARIAN_NEOBLAST_HEURISTIC.source
+
+    def test_physarum_is_data_gap(self):
+        """Physarum profile should be marked as DATA GAP."""
+        assert PHYSARUM.evidence_status == "[DATA GAP]"
+        assert "DATA GAP" in PHYSARUM.source
+
 
 # ======================================================================
 # Switching Energy tests
@@ -392,6 +406,23 @@ class TestBiologicalBitBuilder:
         assert bb.channel_capacity_bits_per_s > 0
         assert bb.noise_source != ""
 
+    def test_default_evidence_status_is_data_gap(self):
+        """Default build should carry [DATA GAP] evidence status."""
+        bb = build_biological_bit()
+        assert bb.evidence_status == "[DATA GAP]"
+
+    def test_measurement_plan_populated(self):
+        """Default build should include a non-empty measurement plan."""
+        bb = build_biological_bit()
+        assert len(bb.measurement_plan) >= 5
+        assert any("patch clamp" in p for p in bb.measurement_plan)
+        assert any("bistability" in p for p in bb.measurement_plan)
+
+    def test_explicit_evidence_status(self):
+        """Passing evidence_status should override the default."""
+        bb = build_biological_bit(evidence_status="[EVIDENCED]")
+        assert bb.evidence_status == "[EVIDENCED]"
+
     def test_custom_build(self):
         """Custom parameters should be reflected in the result."""
         bb = build_biological_bit(
@@ -437,6 +468,9 @@ class TestHardwareLibrary:
         assert "CPU" in cpu.digital_equivalent
         assert len(cpu.key_molecules) >= 3
         assert cpu.evidence_level != ""
+        assert cpu.read_method != ""
+        assert cpu.write_method != ""
+        assert len(cpu.data_gaps) >= 1
 
     def test_ram_component(self):
         """RAM component should be Vmem gradient."""
@@ -445,6 +479,8 @@ class TestHardwareLibrary:
         assert "Vmem" in ram.name
         assert "RAM" in ram.digital_equivalent
         assert len(ram.key_molecules) >= 3
+        assert "PMID" in ram.evidence_level or "PMID" in ram.persistence
+        assert len(ram.data_gaps) >= 1
 
     def test_ssd_component(self):
         """SSD component should be Innexin connectivity."""
@@ -453,11 +489,19 @@ class TestHardwareLibrary:
         assert "Innexin" in ssd.name
         assert "SSD" in ssd.digital_equivalent
         assert "non-volatile" in ssd.persistence.lower()
+        assert len(ssd.data_gaps) >= 1
 
     def test_all_components_have_evidence(self):
         """Every component should declare an evidence level."""
         for key, comp in HARDWARE_LIBRARY.items():
             assert comp.evidence_level != "", f"{key} missing evidence_level"
+
+    def test_all_components_declare_data_gaps(self):
+        """Every component should list its data gaps."""
+        for key, comp in HARDWARE_LIBRARY.items():
+            assert len(comp.data_gaps) >= 1, f"{key} missing data_gaps"
+            for gap in comp.data_gaps:
+                assert "UNKNOWN" in gap, f"{key} data_gap missing UNKNOWN marker: {gap}"
 
     def test_format_hardware_library(self):
         """format_hardware_library should produce readable text."""
@@ -468,3 +512,6 @@ class TestHardwareLibrary:
         assert "[SSD]" in text
         assert "Digital Equivalent:" in text
         assert "Key Molecules:" in text
+        assert "Read Method:" in text
+        assert "Write Method:" in text
+        assert "DATA GAPS:" in text

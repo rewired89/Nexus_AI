@@ -1,26 +1,33 @@
-"""Biological Information Module (BIM) quantitative framework.
+"""Biological Information Module (BIM) — quantitative specification framework.
 
-Provides calculators for proving the existence of the "Biological Bit":
-  1. Nernst equilibrium potential (E_ion)
-  2. State Stability: T_half for Vmem persistence against metabolic noise
-  3. Switching Energy: ATP cost per bit-flip (E_bit)
-  4. Error Rate: Probability of stochastic bit-flip from ion channel noise
-  5. Shannon Entropy: Information content of a bioelectric state space
-  6. Channel Capacity: Maximum information throughput of a gap junction bus
+Provides calculators for specifying the measurable parameters of a "Biological Bit":
+  1. Nernst equilibrium potential (E_ion) — pure physics, universal constants
+  2. State Stability: T_half for Vmem persistence (RC time constant formula)
+  3. Switching Energy: energy cost per bit-flip (capacitive + ion transport)
+  4. Error Rate: stochastic bit-flip probability from ion channel noise model
+  5. Shannon Entropy: information content of a bioelectric state space
+  6. Channel Capacity: Shannon-Hartley for gap junction signaling bandwidth
+
+IMPORTANT — NO-NUMERIC-INVENTION POLICY:
+  These are CALCULATORS, not oracles.  Output is valid only when inputs are:
+    (a) directly cited from a published source, OR
+    (b) derived purely from universal physical constants with stated assumptions.
+  If input parameters are unmeasured, the output must be labeled [DATA GAP]
+  and accompanied by an experimental measurement plan.
 
 Hardware Specification Library:
-  - CPU: Nav/Kv channel arrays (switching speed, gate logic)
-  - RAM: Vmem gradient across syncytium (read/write latency)
+  - CPU: Nav/Kv channel arrays (switching logic)
+  - RAM: Vmem gradient across syncytium (bioelectric memory)
   - SSD: Innexin-gated connectivity patterns (anatomical memory)
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # ======================================================================
-# Physical constants
+# Physical constants (universal — not species-specific)
 # ======================================================================
 R = 8.314           # J/(mol·K), gas constant
 F = 96485.0         # C/mol, Faraday constant
@@ -32,7 +39,7 @@ PLANARIAN_TEMP_K = 293.15  # K, 20°C (planarian culture temperature)
 
 
 # ======================================================================
-# Nernst Equation
+# Nernst Equation — pure physics bound
 # ======================================================================
 def nernst_potential(
     z: int,
@@ -43,6 +50,10 @@ def nernst_potential(
     """Calculate the Nernst equilibrium potential E_ion in volts.
 
     E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
+
+    This is a pure physics calculation using universal constants.
+    The result is valid ONLY if the input concentrations are measured.
+    If concentrations are estimated, the output must be labeled [DATA GAP].
 
     Args:
         z: Ion valence (+1 for K+/Na+, -1 for Cl-, +2 for Ca2+).
@@ -75,7 +86,13 @@ def nernst_mv(
 # ======================================================================
 @dataclass
 class IonProfile:
-    """Intracellular/extracellular ion concentrations for a cell type."""
+    """Intracellular/extracellular ion concentrations for a cell type.
+
+    IMPORTANT: The ``evidence_status`` field must accurately reflect
+    whether these concentrations were directly measured or extrapolated.
+    Nernst potentials calculated from unmeasured concentrations must be
+    labeled [DATA GAP] in any output.
+    """
 
     organism: str
     cell_type: str
@@ -90,6 +107,7 @@ class IonProfile:
     ca_out: float = 1.5
     temp_k: float = PLANARIAN_TEMP_K
     source: str = ""
+    evidence_status: str = "[DATA GAP]"  # [EVIDENCED] or [DATA GAP]
 
     def e_k(self) -> float:
         """K+ equilibrium potential in mV."""
@@ -110,7 +128,8 @@ class IonProfile:
         return nernst_mv(+2, self.ca_out, self.ca_in, self.temp_k)
 
 
-# Known / estimated profiles
+# --- Profiles with known citation status ---
+
 XENOPUS_OOCYTE = IonProfile(
     organism="Xenopus laevis",
     cell_type="oocyte",
@@ -119,42 +138,60 @@ XENOPUS_OOCYTE = IonProfile(
     cl_in=30.0, cl_out=110.0,
     temp_k=295.15,  # 22°C
     source="Hodgkin & Huxley (adapted), textbook values",
+    evidence_status="[EVIDENCED]",
 )
 
 PLANARIAN_NEOBLAST_HEURISTIC = IonProfile(
     organism="Schmidtea mediterranea",
-    cell_type="neoblast [HEURISTIC]",
-    k_in=120.0, k_out=3.0,    # freshwater, extrapolated from Xenopus
-    na_in=12.0, na_out=5.0,   # low-Na freshwater environment
-    cl_in=20.0, cl_out=4.0,   # freshwater
+    cell_type="neoblast",
+    k_in=120.0, k_out=3.0,    # extrapolated from Xenopus for freshwater
+    na_in=12.0, na_out=5.0,   # estimated for freshwater environment
+    cl_in=20.0, cl_out=4.0,   # estimated for freshwater
     temp_k=PLANARIAN_TEMP_K,
-    source="[HEURISTIC] Extrapolated from Xenopus, adjusted for freshwater",
+    source=(
+        "[DATA GAP] No direct ion concentration measurements exist for "
+        "S. mediterranea neoblasts. Values extrapolated from Xenopus oocyte "
+        "and adjusted for freshwater osmolarity. All Nernst potentials "
+        "derived from this profile are UNMEASURED ESTIMATES."
+    ),
+    evidence_status="[DATA GAP]",
 )
 
 PHYSARUM = IonProfile(
     organism="Physarum polycephalum",
-    cell_type="plasmodium [HEURISTIC]",
-    k_in=100.0, k_out=1.0,    # very low external K in pond water
+    cell_type="plasmodium",
+    k_in=100.0, k_out=1.0,    # estimated for pond water
     na_in=10.0, na_out=2.0,
     cl_in=15.0, cl_out=2.0,
     temp_k=295.15,
-    source="[HEURISTIC] Extrapolated from known protist values",
+    source=(
+        "[DATA GAP] No direct ion concentration measurements exist for "
+        "Physarum plasmodium cytoplasm. Values extrapolated from known "
+        "protist literature. All Nernst potentials derived from this "
+        "profile are UNMEASURED ESTIMATES."
+    ),
+    evidence_status="[DATA GAP]",
 )
 
 
 # ======================================================================
-# Biological Bit metrics
+# Biological Bit metrics — CALCULATORS (not assertions)
 # ======================================================================
 @dataclass
 class BiologicalBit:
-    """Quantitative proof for the existence of a biological bit.
+    """Quantitative specification for a candidate biological bit.
 
     A biological bit is defined as a stable, switchable, readable
     unit of bioelectric information.
+
+    IMPORTANT: This is a SPECIFICATION, not a proof.
+    Proof requires experimental measurement of every parameter.
+    The ``evidence_status`` field indicates whether values are from
+    cited measurements or from unmeasured estimates requiring validation.
     """
 
     # State Stability
-    t_half_seconds: float  # Half-life of Vmem shift before noise dissipation
+    t_half_seconds: float  # Half-life of Vmem shift (RC passive decay)
     t_half_label: str = ""
 
     # Switching Energy
@@ -170,6 +207,10 @@ class BiologicalBit:
     shannon_entropy_bits: float = 0.0  # H(X) of the state space
     channel_capacity_bits_per_s: float = 0.0  # C of the signaling channel
 
+    # Evidence tracking
+    evidence_status: str = "[DATA GAP]"
+    measurement_plan: list[str] = field(default_factory=list)
+
 
 def calc_switching_energy(
     delta_v_mv: float,
@@ -178,19 +219,15 @@ def calc_switching_energy(
 ) -> tuple[float, float]:
     """Calculate the energy cost of a bioelectric bit-flip.
 
-    E_bit = (1/2) * C * (ΔV)^2   (capacitive energy)
-    or
-    E_bit = ions_per_event * E_per_ion
+    Pure physics formula — valid only when inputs are measured.
 
-    where E_per_ion = e * ΔV for each ion transported.
-
-    Also calculates ATP cost:
+    E_bit = max( (1/2)*C*(ΔV)^2 ,  ions * e * ΔV )
     ATP_per_flip = E_bit / ATP_ENERGY
 
     Args:
         delta_v_mv: Voltage swing for the bit-flip in mV.
         ions_per_event: Number of ions transported per switching event.
-        capacitance_pf: Membrane capacitance in picofarads (typical cell ~10 pF).
+        capacitance_pf: Membrane capacitance in picofarads.
 
     Returns:
         (e_bit_joules, atp_per_flip)
@@ -215,15 +252,15 @@ def calc_state_stability(
     membrane_resistance_mohm: float = 500.0,
     capacitance_pf: float = 10.0,
 ) -> float:
-    """Estimate the RC time constant (passive decay) for a Vmem state.
+    """Calculate the RC time constant (passive decay) for a Vmem state.
 
-    tau = R_m * C_m
+    Pure physics formula: T_half = R_m * C_m * ln(2)
 
-    This gives the time constant for passive voltage decay.
-    T_half = tau * ln(2).
+    This gives the PASSIVE decay half-life. Active ion pumps extend
+    persistence indefinitely while ATP is available.
 
-    For an actively maintained state (with ion pumps), T_half is
-    effectively infinite as long as ATP is available.
+    IMPORTANT: R_m and C_m must be measured for the specific cell type.
+    If estimated, label output [DATA GAP].
 
     Args:
         membrane_resistance_mohm: Membrane resistance in megaohms.
@@ -245,20 +282,19 @@ def calc_channel_noise_error_rate(
     observation_window_s: float = 1.0,
     switching_rate_hz: float = 1000.0,
 ) -> float:
-    """Estimate the probability of a stochastic bit-flip from channel noise.
+    """Estimate probability of stochastic bit-flip from channel noise.
 
-    Models the probability that enough channels open simultaneously
-    (by random fluctuation) to cross the threshold for a state change.
-
-    Uses a binomial approximation:
+    Uses a binomial + KL divergence model:
     P(k >= k_threshold | N, p_open) ≈ exp(-N * D_KL(p_threshold || p_open))
 
-    where D_KL is the Kullback-Leibler divergence.
+    IMPORTANT: n_channels, p_open_resting, p_open_threshold, and
+    switching_rate must all be measured for the specific cell type.
+    If any are estimated, label output [DATA GAP].
 
     Args:
         n_channels: Number of ion channels in the relevant membrane patch.
         p_open_resting: Probability a single channel is open at resting Vmem.
-        p_open_threshold: Fraction that must open to trigger a state change.
+        p_open_threshold: Fraction that must open to trigger state change.
         observation_window_s: Time window in seconds.
         switching_rate_hz: Channel gating transition rate.
 
@@ -292,9 +328,11 @@ def calc_shannon_entropy(
 ) -> float:
     """Calculate Shannon entropy of a bioelectric state space.
 
-    H(X) = -sum(p_i * log2(p_i))
+    Pure information theory: H(X) = -sum(p_i * log2(p_i))
 
-    If state_probabilities is None, assumes uniform distribution.
+    IMPORTANT: n_stable_states must be experimentally determined
+    (e.g., via voltage clamp + bistability assay). If estimated,
+    label output [DATA GAP].
 
     Args:
         n_stable_states: Number of distinguishable stable Vmem states.
@@ -323,7 +361,10 @@ def calc_channel_capacity(
 ) -> float:
     """Shannon-Hartley channel capacity for a biological signaling channel.
 
-    C = B * log2(1 + SNR)
+    Pure information theory: C = B * log2(1 + SNR)
+
+    IMPORTANT: bandwidth_hz and snr_linear must be measured from
+    actual gap junction recordings. If estimated, label [DATA GAP].
 
     Args:
         bandwidth_hz: Signal bandwidth in Hz (e.g., gap junction bandwidth).
@@ -348,10 +389,13 @@ def build_biological_bit(
     n_stable_states: int = 4,
     gj_bandwidth_hz: float = 100.0,
     gj_snr_linear: float = 10.0,
+    evidence_status: str = "[DATA GAP]",
 ) -> BiologicalBit:
     """Build a complete BiologicalBit specification from parameters.
 
-    Default values are for a planarian neoblast [HEURISTIC].
+    IMPORTANT: Unless every input parameter is from a cited measurement,
+    the resulting BiologicalBit must carry evidence_status="[DATA GAP]"
+    and a measurement plan listing what needs to be experimentally determined.
     """
     e_bit, atp = calc_switching_energy(delta_v_mv, ions_per_event, capacitance_pf)
     t_half = calc_state_stability(membrane_resistance_mohm, capacitance_pf)
@@ -360,6 +404,18 @@ def build_biological_bit(
     )
     entropy = calc_shannon_entropy(n_stable_states)
     capacity = calc_channel_capacity(gj_bandwidth_hz, gj_snr_linear)
+
+    measurement_plan = [
+        "Measure R_m and C_m via patch clamp on target cell type",
+        "Determine n_stable_states via voltage clamp bistability assay",
+        "Count n_channels per membrane patch via single-channel recording",
+        "Measure p_open at resting Vmem via single-channel analysis",
+        "Determine threshold p_open for state transition",
+        "Measure gap junction bandwidth via paired-cell voltage clamp",
+        "Measure gap junction SNR from Vmem recordings",
+        "Measure delta_V for state transition via current injection",
+        "Count ions_per_event via ion-sensitive fluorescence during switching",
+    ]
 
     return BiologicalBit(
         t_half_seconds=round(t_half, 4),
@@ -371,13 +427,15 @@ def build_biological_bit(
         noise_source="Stochastic ion channel gating",
         shannon_entropy_bits=round(entropy, 3),
         channel_capacity_bits_per_s=round(capacity, 2),
+        evidence_status=evidence_status,
+        measurement_plan=measurement_plan,
     )
 
 
 def _format_time(seconds: float) -> str:
     """Human-readable time label."""
     if seconds < 0.001:
-        return f"{seconds * 1e6:.1f} μs"
+        return f"{seconds * 1e6:.1f} \u03bcs"
     if seconds < 1:
         return f"{seconds * 1000:.1f} ms"
     if seconds < 60:
@@ -392,17 +450,24 @@ def _format_time(seconds: float) -> str:
 # ======================================================================
 @dataclass
 class HardwareComponent:
-    """A certified biological hardware component for Acheron."""
+    """A candidate biological hardware component for Acheron.
+
+    Each component maps a biological structure to a digital-computing
+    equivalent.  The ``evidence_level`` and ``data_gaps`` fields enforce
+    the no-numeric-invention policy.
+    """
 
     name: str
     digital_equivalent: str
     biological_basis: str
-    read_latency: str
-    write_latency: str
+    read_method: str          # how to read the state (instrument/technique)
+    write_method: str         # how to write/set the state
+    timescale_class: str      # qualitative: "ms", "seconds", "hours", "days+"
     persistence: str
     key_molecules: list[str]
     organism_availability: str
-    evidence_level: str  # [EVIDENCED], [INFERRED], [HEURISTIC]
+    evidence_level: str  # [EVIDENCED], [INFERRED], [DATA GAP]
+    data_gaps: list[str] = field(default_factory=list)
 
 
 CPU_NAV_KV = HardwareComponent(
@@ -410,14 +475,14 @@ CPU_NAV_KV = HardwareComponent(
     digital_equivalent="CPU — switching logic gates",
     biological_basis=(
         "Voltage-gated Na+ and K+ channels form the core switching "
-        "elements. Nav channels open at depolarization threshold (~-40 mV), "
-        "producing rapid inward current (bit SET). Kv channels activate with "
-        "delay, producing outward current (bit RESET). Together they "
-        "implement a NOT gate: depolarization → Nav opens → further "
-        "depolarization → Kv opens → repolarization (inversion)."
+        "elements. Nav channels open at depolarization threshold, producing "
+        "rapid inward current (bit SET). Kv channels activate with delay, "
+        "producing outward current (bit RESET). Together they can implement "
+        "signal inversion (NOT gate equivalent)."
     ),
-    read_latency="~1 ms (action potential propagation speed)",
-    write_latency="~0.5 ms (channel gating transition)",
+    read_method="Patch clamp electrophysiology; voltage-sensitive dyes",
+    write_method="Current injection; optogenetic depolarization; ionophore application",
+    timescale_class="ms-scale (textbook electrophysiology, multiple phyla)",
     persistence="Volatile — requires continuous ion flux to maintain state",
     key_molecules=[
         "SCN (Nav1.x family) — voltage-gated sodium channels",
@@ -426,6 +491,11 @@ CPU_NAV_KV = HardwareComponent(
     ],
     organism_availability="Universal eukaryotic; planarian homologs confirmed",
     evidence_level="[EVIDENCED] — electrophysiology in multiple phyla",
+    data_gaps=[
+        "Exact Nav/Kv channel counts per planarian neoblast — UNKNOWN",
+        "Single-channel conductance in planarian cells — UNKNOWN",
+        "Gating kinetics (activation/inactivation τ) in planarian — UNKNOWN",
+    ],
 )
 
 RAM_VMEM_GRADIENT = HardwareComponent(
@@ -439,13 +509,25 @@ RAM_VMEM_GRADIENT = HardwareComponent(
         "and form stable patterns. The pattern is actively maintained "
         "by ion pump activity (H+/K+-ATPase, V-ATPase)."
     ),
-    read_latency="~30 s (DiBAC4(3) equilibration) to ~1 ms (electrode)",
-    write_latency="~seconds (pharmacological) to ~ms (optogenetic)",
+    read_method=(
+        "DiBAC4(3) voltage-sensitive dye (equilibration ~30 s); "
+        "sharp microelectrode (ms resolution); "
+        "genetically encoded voltage indicators (future)"
+    ),
+    write_method=(
+        "Pharmacological: SCH28080 (H+/K+-ATPase inhibitor), "
+        "ivermectin (GluCl activator), concanamycin (V-ATPase inhibitor); "
+        "Optogenetic: channelrhodopsin (future in planarians)"
+    ),
+    timescale_class=(
+        "Write: seconds (pharmacological); "
+        "Read: ms (electrode) to ~30 s (dye equilibration)"
+    ),
     persistence=(
-        "Semi-volatile — persists as long as pumps are active (~hours "
-        "without ATP). In planarians, the target morphology pattern "
-        "persists indefinitely through regeneration, suggesting a "
-        "non-volatile backup exists."
+        "Semi-volatile — persists as long as pumps are active. "
+        "In planarians, the target morphology pattern persists "
+        "indefinitely through regeneration, suggesting a "
+        "non-volatile backup exists (Oviedo et al. 2010, PMID:20160860)."
     ),
     key_molecules=[
         "H+/K+-ATPase — sets anterior hyperpolarization",
@@ -457,7 +539,17 @@ RAM_VMEM_GRADIENT = HardwareComponent(
         "Planarian: innexin-based; Xenopus: connexin-based; "
         "Physarum: actin-tube-coupled oscillation"
     ),
-    evidence_level="[EVIDENCED] — DiBAC imaging, pharmacological manipulation",
+    evidence_level=(
+        "[EVIDENCED] — DiBAC imaging of planarian Vmem patterns "
+        "(Beane et al. 2011, PMID:21554866; Oviedo et al. 2010)"
+    ),
+    data_gaps=[
+        "Exact resting Vmem of planarian neoblasts (mV) — UNKNOWN; requires patch clamp",
+        "Spatial resolution of Vmem map (cell-by-cell vs tissue-average) — UNKNOWN",
+        "Number of distinguishable stable Vmem states per cell — UNKNOWN; "
+        "requires bistability assay",
+        "Gap junction bandwidth (Hz) and SNR — UNKNOWN; requires paired-cell recording",
+    ],
 )
 
 SSD_INNEXIN_CONNECTIVITY = HardwareComponent(
@@ -466,24 +558,28 @@ SSD_INNEXIN_CONNECTIVITY = HardwareComponent(
     biological_basis=(
         "The pattern of gap junction connectivity (which cells are "
         "electrically coupled) encodes long-term structural information. "
-        "This 'wiring diagram' is determined by innexin isoform "
-        "expression and is maintained through cell division. In "
-        "planarians, two-headed animals maintain their altered "
-        "connectivity pattern through unlimited regeneration cycles, "
-        "demonstrating true non-volatile storage. The target "
-        "morphology acts as a checksum — cells compare their local "
-        "state against the stored pattern and rebuild until consistency "
-        "is achieved."
+        "In planarians, Innexin-7 RNAi produces two-headed animals that "
+        "maintain their altered phenotype through unlimited regeneration "
+        "cycles, demonstrating non-volatile storage "
+        "(Oviedo et al. 2010, PMID:20160860)."
     ),
-    read_latency="~minutes (dye coupling assay) to ~hours (gene expression)",
-    write_latency="~24-48h (RNAi knockdown of specific innexins)",
+    read_method=(
+        "Dye coupling assay (Lucifer Yellow, neurobiotin); "
+        "in situ hybridization for innexin expression"
+    ),
+    write_method=(
+        "RNAi knockdown of specific innexin isoforms; "
+        "pharmacological: octanol, heptanol (gap junction blockers)"
+    ),
+    timescale_class="Write: 24-48 h (RNAi); Persistence: indefinite (>18 months demonstrated)",
     persistence=(
         "Non-volatile — persists through amputation and regeneration "
-        "indefinitely (>18 months demonstrated in 2-headed planarians)"
+        "indefinitely (>18 months in 2-headed planarians, "
+        "Oviedo et al. 2010)"
     ),
     key_molecules=[
         "Innexin-7 — primary gap junction protein in planarian epidermis",
-        "Innexin-13 — neoblast-specific gap junction",
+        "Innexin-13 — neoblast-enriched gap junction",
         "Beta-catenin — downstream effector of stored polarity",
         "Wnt / Notum — pathway controlled by connectivity pattern",
     ],
@@ -492,8 +588,16 @@ SSD_INNEXIN_CONNECTIVITY = HardwareComponent(
         "transferable to vertebrate connexin system without mapping"
     ),
     evidence_level=(
-        "[EVIDENCED] for persistence; [INFERRED] for encoding mechanism"
+        "[EVIDENCED] for persistence of altered phenotype; "
+        "[DATA GAP] for encoding mechanism (how connectivity encodes morphology)"
     ),
+    data_gaps=[
+        "Complete innexin isoform expression map per cell type — UNKNOWN",
+        "Single gap junction channel conductance in planarian — UNKNOWN",
+        "Information capacity of the connectivity pattern (bits) — UNKNOWN; "
+        "requires systematic connectivity mapping + perturbation",
+        "Mechanism by which connectivity pattern is read during regeneration — UNKNOWN",
+    ],
 )
 
 HARDWARE_LIBRARY = {
@@ -512,11 +616,16 @@ def format_hardware_library() -> str:
             f"[{key.upper()}] {comp.name}",
             f"  Digital Equivalent: {comp.digital_equivalent}",
             f"  Biological Basis: {comp.biological_basis}",
-            f"  Read Latency: {comp.read_latency}",
-            f"  Write Latency: {comp.write_latency}",
+            f"  Read Method: {comp.read_method}",
+            f"  Write Method: {comp.write_method}",
+            f"  Timescale Class: {comp.timescale_class}",
             f"  Persistence: {comp.persistence}",
             f"  Key Molecules: {', '.join(comp.key_molecules)}",
             f"  Organism Availability: {comp.organism_availability}",
             f"  Evidence Level: {comp.evidence_level}",
         ])
+        if comp.data_gaps:
+            lines.append("  DATA GAPS:")
+            for gap in comp.data_gaps:
+                lines.append(f"    - {gap}")
     return "\n".join(lines)

@@ -140,14 +140,22 @@ channel density maps to 3D morphological checksums.
 thermodynamics), Information Theorist (Shannon entropy, channel capacity), and \
 Critic (falsification) — each section reflects which agent produced it.
 
-BIM QUANTIFICATION (Biological Information Module):
-For any claimed "biological bit," provide:
-- State Stability (T_half): R_m * C_m * ln(2).
-- Switching Energy (E_bit): ions_per_event * e * delta_V. ATP = E_bit / 5e-20 J.
-- Error Rate: P(stochastic bit-flip) from channel noise.
-- Shannon Entropy: H = log2(N_states). Channel Capacity: C = B * log2(1 + SNR).
+NO-NUMERIC-INVENTION POLICY (ABSOLUTE):
+You may NOT output any numeric value for biological parameters unless:
+  (a) it is directly reported in a cited source (PMID/DOI), OR
+  (b) it is a pure physics bound using ONLY universal constants and stated assumptions.
+If neither applies: "UNKNOWN — requires measurement."
+
+BIM SPECIFICATION (Biological Information Module):
+For any claimed "biological bit," specify measurable parameters:
+- State Stability (T_hold): formula T_half = R_m * C_m * ln(2). \
+Valid ONLY with measured R_m and C_m. If unmeasured: state measurement plan.
+- Switching Energy (E_bit): pure physics formula. Valid ONLY with measured inputs.
+- Error Rate / BER: UNKNOWN unless single-channel recordings exist for cell type.
+- Shannon Entropy: H = log2(N_states). N_states requires bistability assay.
+- Channel Capacity: C = B * log2(1 + SNR). B and SNR require gap junction recording.
+For EACH: cite measured value OR output "UNKNOWN" + measurement plan.
 Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem gradient), SSD (Innexin).
-Label all estimates [HEURISTIC] unless from measured data.
 
 GUARDRAILS:
 - Never present hypotheses as facts.
@@ -241,12 +249,12 @@ FAULT TOLERANCE MAPPING
 - Regeneration = RAID rebuild (tissue repair from distributed state)
 - Specify RAID level equivalent for the organism's fault tolerance
 
-BIM QUANTIFICATION
+BIM SPECIFICATION
 For any claimed bioelectric state or "biological bit":
-- State Stability (T_half), Switching Energy (E_bit), Error Rate
-- Shannon Entropy: H = log2(N_states)
-- Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin)
-- Label all estimates [HEURISTIC] unless from measured data.
+- For EACH parameter (T_hold, E_bit, BER, entropy, capacity):
+  Cite measured value OR state "UNKNOWN — requires [experiment]."
+- State the pure physics formula. Do NOT compute from unmeasured inputs.
+- Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin).
 
 UNCERTAINTY
 - Explicit gaps, missing variables, conflicting evidence
@@ -312,12 +320,12 @@ FAULT TOLERANCE MAPPING
 - Colony/tissue redundancy = Replication factor
 - Specify RAID level equivalent for the system's fault tolerance
 
-BIM QUANTIFICATION
+BIM SPECIFICATION
 For any proposed bioelectric computation:
-- State Stability (T_half), Switching Energy (E_bit), Error Rate
-- Shannon Entropy, Channel Capacity for the signaling channels
-- Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin)
-- Label all estimates [HEURISTIC] unless from measured data.
+- For EACH parameter (T_hold, E_bit, BER, entropy, capacity):
+  Cite measured value OR state "UNKNOWN — requires [experiment]."
+- State the pure physics formula. Do NOT compute from unmeasured inputs.
+- Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin).
 
 UNCERTAINTY & STRATEGIC RECOMMENDATION
 - "Low Confidence" is NOT a final answer — commit to a recommendation
@@ -402,7 +410,8 @@ def parse_evidence_graph(raw_output: str) -> EvidenceGraph:
                 "SUBSTRATE SELECTION", "BIGR",
                 "PROTOCOL SPECIFICATION", "FAULT TOLERANCE",
                 "HEURISTIC BASELINE", "STRATEGIC RECOMMEND",
-                "BIM QUANTIFICATION", "GRAPH TOPOLOGY",
+                "BIM QUANTIFICATION", "BIM SPECIFICATION",
+                "GRAPH TOPOLOGY",
                 "HARDWARE SPEC",
             ]
         ):
@@ -547,7 +556,8 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
                 "SYSTEM DESIGN", "VALIDATION PATH", "BIOELECTRIC SCHEMATIC",
                 "SUBSTRATE SELECTION", "PROTOCOL SPECIFICATION",
                 "FAULT TOLERANCE", "STRATEGIC RECOMMEND",
-                "BIM QUANTIFICATION", "GRAPH TOPOLOGY",
+                "BIM QUANTIFICATION", "BIM SPECIFICATION",
+                "GRAPH TOPOLOGY",
                 "HARDWARE SPEC",
             ]
         ):

@@ -63,16 +63,29 @@ rates for biological signaling channels.
    - The Critic: attempt to falsify every hypothesis using known biological constraints.
    Each section of your output should reflect which agent produced it.
 
-BIOLOGICAL INFORMATION MODULE (BIM) — Quantitative Proof:
-For any claimed "biological bit," you must provide or estimate:
-- State Stability (T_half): duration a Vmem shift persists before metabolic noise \
-dissipates it. T_half = R_m * C_m * ln(2).
-- Switching Energy (E_bit): ATP cost per bit-flip. \
-E_bit = ions_per_event * e * delta_V. ATP_per_flip = E_bit / 5e-20 J.
-- Error Rate: probability of stochastic bit-flip from ion channel noise.
-- Shannon Entropy: H(X) = log2(N_states) for N distinguishable stable states.
-- Channel Capacity: C = B * log2(1 + SNR) for gap junction signaling bandwidth.
-Label all estimates as [HEURISTIC] unless derived from source measurements.
+NO-NUMERIC-INVENTION POLICY (ABSOLUTE):
+You may NOT output any numeric value for biological parameters (T_half, noise, \
+thresholds, BER, entropy, capacity, ATP/flip, conductance, Vmem, etc.) unless:
+  (a) the number is directly reported in a cited source (give PMID/DOI), OR
+  (b) you label it as a "pure physics bound" using ONLY universal constants \
+(R, F, k_B, e) and explicitly stated assumptions.
+If neither applies, output: "UNKNOWN — requires measurement."
+"Quantitative proof" is NOT allowed. Use: "Quantitative specification + \
+experimental measurement plan." Proof requires experiments, not estimates.
+
+BIOLOGICAL INFORMATION MODULE (BIM) — Quantitative Specification:
+For any claimed "biological bit," specify the MEASURABLE parameters:
+- State Stability (T_hold): persistence time. Formula: T_half = R_m * C_m * ln(2). \
+Valid ONLY with measured R_m and C_m. If unmeasured: "UNKNOWN — requires patch clamp."
+- Switching Energy (E_bit): formula is pure physics. Valid ONLY with measured delta_V \
+and ions_per_event. If unmeasured: state the formula and what needs measuring.
+- Error Rate / BER: P(stochastic bit-flip). UNKNOWN for all planarian cells — \
+requires single-channel recording to determine.
+- Shannon Entropy: H = log2(N_states). N_states UNKNOWN for planarian cells — \
+requires bistability assay.
+- Channel Capacity: C = B * log2(1 + SNR). B and SNR UNKNOWN for planarian gap \
+junctions — requires paired-cell voltage clamp.
+For EACH parameter: either cite the measured value or output the measurement plan.
 
 HARDWARE SPECIFICATION LIBRARY:
 When discussing biological computation, map to certified hardware components:
@@ -216,13 +229,13 @@ V. CROSS-SPECIES NOTES
 - Compare findings across model organisms where evidence exists.
 - State where evidence transfers and where gaps remain.
 
-VI. BIM QUANTIFICATION (when bioelectric states are discussed)
-- State Stability (T_half): estimate persistence of any claimed Vmem state.
-- Switching Energy (E_bit): ATP cost per state change.
-- Error Rate: stochastic bit-flip probability from channel noise.
-- Shannon Entropy: information content of the state space.
-- Label all estimates [HEURISTIC] unless from measured data.
+VI. BIM SPECIFICATION (when bioelectric states are discussed)
+- For each parameter (T_hold, E_bit, BER, entropy, capacity):
+  If a cited measurement exists: state value + citation.
+  If NO measurement exists: state "UNKNOWN — requires [specific experiment]."
+- State the pure physics formula that WOULD apply if inputs were measured.
 - Map components to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin).
+- Do NOT output computed values from unmeasured inputs.
 
 VII. MINIMAL WET-LAB TEST (MVP)
 - 4-6 step protocol for a 1-2 week baseline experiment.
@@ -313,15 +326,14 @@ Map the biological system's regeneration to RAID-level redundancy:
 - Colony/tissue redundancy = Replication factor
 Specify which RAID level best models the organism's fault tolerance.
 
-11. BIM QUANTIFICATION
+11. BIM SPECIFICATION
 For any claimed bioelectric state or "biological bit":
-- State Stability (T_half): how long does the Vmem state persist? \
-T_half = R_m * C_m * ln(2). Label [HEURISTIC] if estimated.
-- Switching Energy (E_bit): ATP cost per state change. \
-E_bit = ions_per_event * e * delta_V. ATP_per_flip = E_bit / 5e-20 J.
-- Error Rate: P(stochastic bit-flip) from ion channel noise.
-- Shannon Entropy: H(X) = log2(N_states) for the state space.
-- Channel Capacity: C = B * log2(1 + SNR) for gap junction signaling.
+- For EACH measurable parameter (T_hold, E_bit, BER, entropy, capacity):
+  If a cited measurement exists: state value + source.
+  If NOT measured: state "UNKNOWN — requires [specific experiment]."
+  State the pure physics formula that would apply if inputs were measured.
+- NO-NUMERIC-INVENTION: Do NOT compute values from unmeasured inputs.
+  Instead, specify what needs measuring and how to measure it.
 Map to Hardware Library: CPU (Nav/Kv arrays), RAM (Vmem gradient), \
 SSD (Innexin connectivity patterns).
 
@@ -972,7 +984,8 @@ class RAGPipeline:
             elif any(
                 m in upper
                 for m in [
-                    "BIM QUANTIFICATION", "11. BIM",
+                    "BIM QUANTIFICATION", "BIM SPECIFICATION",
+                    "11. BIM",
                     "BIOLOGICAL BIT", "BIOLOGICAL INFORMATION",
                 ]
             ):
