@@ -87,6 +87,13 @@ class Settings(BaseSettings):
         default=3, alias="ACHERON_MAX_SPECULATION",
         description="Maximum number of speculative hypotheses (0-3)",
     )
+    evidence_mode: str = Field(
+        default="verified", alias="ACHERON_EVIDENCE_MODE",
+        description=(
+            "Evidence policy: 'verified' (strict, default)"
+            " or 'discovery' (heuristic extrapolation allowed)"
+        ),
+    )
 
     model_config = {
         "env_file": str(_PROJECT_ROOT / ".env"),

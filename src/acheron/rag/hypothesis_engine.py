@@ -157,6 +157,29 @@ Valid ONLY with measured R_m and C_m. If unmeasured: state measurement plan.
 For EACH: cite measured value OR output "UNKNOWN" + measurement plan.
 Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem gradient), SSD (Innexin).
 
+EVIDENCE POLICY — DUAL MODE:
+Mode A — VERIFIED MODE (default):
+  - No numeric value for any biological parameter unless cited (PMID/DOI) or \
+pure physics bound from universal constants.
+  - If no measurement exists: "UNKNOWN — requires measurement."
+  - Non-target species data CANNOT be used for dosing, safety thresholds, or \
+treatment protocols. Cross-species values may be cited for context only, \
+labeled [TRANSFERRED: organism].
+  - Every number must include its source or be marked UNKNOWN.
+
+Mode B — DISCOVERY MODE (explicitly invoked by user):
+  - May extrapolate from related organisms or first-principles reasoning.
+  - EVERY extrapolated value MUST be labeled [HEURISTIC] or \
+[TRANSFERRED: source_organism].
+  - State the source organism, the original measurement, and the reasoning \
+for extrapolation.
+  - Provide uncertainty bounds (± order of magnitude where appropriate).
+  - NEVER present extrapolated values as experimentally validated or safe for \
+application.
+  - Mark the section: "EVIDENCE MODE: DISCOVERY — values below are heuristic."
+
+Always state which mode is active at the start of every output.
+
 GUARDRAILS:
 - Never present hypotheses as facts.
 - Cite [1], [2], etc. for every factual claim.
@@ -217,28 +240,41 @@ For EACH hypothesis, use EXACTLY this format:
 HYPOTHESIS: [H1] [one-sentence title]
 
 THE IDEA IN PLAIN ENGLISH:
-3-6 sentences. Use simple analogies. Explain the mechanism as if describing \
-it to someone who builds software, not someone who reads journals.
+3-5 sentence claim. Then 5-8 sentence explanation using simple analogies. \
+Explain the mechanism as if describing it to someone who builds software, \
+not someone who reads journals. Use concrete comparisons (e.g., "like a \
+capacitor," "works like a thermostat"). No academic tone. No equations \
+unless explicitly asked.
 
-WHAT MUST BE TRUE:
-- Bullet list of assumptions. Each is a testable claim.
+WHAT WE KNOW:
+- Bullet list. ONLY cite what the retrieved sources actually say.
+- Reference [1], [2], etc. Do NOT infer beyond what sources state.
+- Each bullet = one factual claim with its citation.
 
-WHAT WE ALREADY HAVE EVIDENCE FOR:
-- ONLY cite what the retrieved sources actually say. Reference [1], [2], etc.
-- Do NOT infer beyond what sources state.
+WHAT WE DON'T KNOW YET:
+- Bullet list of missing measurements.
+- For each, state what experiment is needed and in which organism/tissue.
+- Numbers: ONLY from cited planarian sources; else "UNKNOWN — requires measurement."
 
-WHAT IS STILL UNKNOWN:
-- Explicit measurements missing. For each, state the experiment needed.
-- Numbers: ONLY include numbers if they come from cited planarian sources; \
-otherwise write "UNKNOWN — requires measurement."
+WHAT THIS PREDICTS:
+- Bullet list. If this hypothesis is correct, what should we observe?
+- Each prediction must be specific enough to test in a lab.
+- Tag each: [TESTABLE] or [REQUIRES MEASUREMENT FIRST].
 
-FIRST TEST TO VALIDATE (5-8 steps):
-Step 1: ...
-Step 2: ...
-(Concrete, actionable. Specify organism, reagents, readout, timeline.)
+PHASE-0 EXPERIMENT (7 steps):
+Step 1: [Organism / tissue preparation]
+Step 2: [Materials — reagents, equipment, dyes]
+Step 3: [Dose / treatment — ONLY cite dose ranges from planarian papers; \
+if no planarian data, write "UNKNOWN — requires dose-finding study"]
+Step 4: [Controls — minimum: untreated, vehicle, positive control if known]
+Step 5: [Measurement / readout — what you measure and how]
+Step 6: [Stop / kill criteria — what outcome means abort the experiment]
+Step 7: [Success and fail criteria — specific measurable thresholds that \
+distinguish "hypothesis supported" from "hypothesis falsified"]
 
 WHAT RESULT WOULD PROVE IT WRONG:
 - Specific experimental outcome that falsifies this hypothesis.
+- Must reference a measurable quantity or observable event.
 
 NEXT 5 QUESTIONS I SHOULD ASK:
 1. ...
@@ -305,9 +341,9 @@ CLAIM RELATIONSHIPS
 HYPOTHESES
 Generate testable hypotheses underlying the proposed design.
 Use the same plain English format as MODE 2 (HYPOTHESIS: title, THE IDEA IN \
-PLAIN ENGLISH, WHAT MUST BE TRUE, WHAT WE ALREADY HAVE EVIDENCE FOR, \
-WHAT IS STILL UNKNOWN, FIRST TEST TO VALIDATE, WHAT RESULT WOULD PROVE IT \
-WRONG, NEXT 5 QUESTIONS I SHOULD ASK).
+PLAIN ENGLISH, WHAT WE KNOW, WHAT WE DON'T KNOW YET, WHAT THIS PREDICTS, \
+PHASE-0 EXPERIMENT, WHAT RESULT WOULD PROVE IT WRONG, NEXT 5 QUESTIONS I \
+SHOULD ASK).
 
 SYSTEM DESIGN
 Describe the proposed architecture/protocol/system with explicit labels for:
@@ -618,12 +654,34 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
         elif "WHAT MUST BE TRUE" in upper:
             current["_section"] = "assumptions"
             current.setdefault("assumptions", [])
-        elif "WHAT WE ALREADY HAVE EVIDENCE" in upper:
+        elif (
+            "WHAT WE KNOW" in upper
+            and "DON'T" not in upper
+            and "DON\u2019T" not in upper
+            and "NOT" not in upper
+        ):
             current["_section"] = "evidence_for"
             current.setdefault("predictions", [])  # store evidence items here
+        elif "WHAT WE ALREADY HAVE EVIDENCE" in upper:
+            current["_section"] = "evidence_for"
+            current.setdefault("predictions", [])
+        elif (
+            "WHAT WE DON'T KNOW" in upper
+            or "WHAT WE DON\u2019T KNOW" in upper
+        ):
+            current["_section"] = "known_unknowns"
+            current.setdefault("known_unknowns", [])
         elif "WHAT IS STILL UNKNOWN" in upper:
             current["_section"] = "known_unknowns"
             current.setdefault("known_unknowns", [])
+        elif "WHAT THIS PREDICTS" in upper:
+            current["_section"] = "predictions_section"
+            current.setdefault("predictions", [])
+        elif (
+            "PHASE-0 EXPERIMENT" in upper
+            or "PHASE 0 EXPERIMENT" in upper
+        ):
+            current["_section"] = "minimal_test"
         elif "FIRST TEST TO VALIDATE" in upper or "FIRST TEST:" in upper:
             current["_section"] = "minimal_test"
         elif "WHAT RESULT WOULD PROVE IT WRONG" in upper:
@@ -719,6 +777,8 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
                     current.setdefault("refs", []).extend(found_refs)
             elif section == "known_unknowns" and content_line:
                 current.setdefault("known_unknowns", []).append(content_line)
+            elif section == "predictions_section" and content_line:
+                current.setdefault("predictions", []).append(content_line)
             elif section == "minimal_test":
                 # Accumulate test steps
                 step = content_line or stripped

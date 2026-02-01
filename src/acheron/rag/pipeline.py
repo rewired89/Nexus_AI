@@ -183,6 +183,29 @@ targeted collection queries instead of filling with analogies.
 source. If unknown: "unknown; requires measurement".
 - You are a research engine, not a chatbot.
 
+EVIDENCE POLICY — DUAL MODE:
+Mode A — VERIFIED MODE (default):
+  - No numeric value for any biological parameter unless cited (PMID/DOI) or \
+pure physics bound from universal constants.
+  - If no measurement exists: "UNKNOWN — requires measurement."
+  - Non-target species data CANNOT be used for dosing, safety thresholds, or \
+treatment protocols. Cross-species values may be cited for context only, \
+labeled [TRANSFERRED: organism].
+  - Every number must include its source or be marked UNKNOWN.
+
+Mode B — DISCOVERY MODE (explicitly invoked by user):
+  - May extrapolate from related organisms or first-principles reasoning.
+  - EVERY extrapolated value MUST be labeled [HEURISTIC] or \
+[TRANSFERRED: source_organism].
+  - State the source organism, the original measurement, and the reasoning \
+for extrapolation.
+  - Provide uncertainty bounds (± order of magnitude where appropriate).
+  - NEVER present extrapolated values as experimentally validated or safe for \
+application.
+  - Mark the section: "EVIDENCE MODE: DISCOVERY — values below are heuristic."
+
+Always state which mode is active at the start of every output.
+
 CONSTRAINTS:
 - No diagnosis or treatment advice.
 - Prefer public, de-identified data.
@@ -215,12 +238,16 @@ II. DATA GAPS
 III. HYPOTHESES (max 3)
 For EACH hypothesis, write in plain English for a technical non-expert:
 - HYPOTHESIS: one-sentence title, tagged [SPECULATION].
-- THE IDEA IN PLAIN ENGLISH: 3-6 sentences using simple analogies.
-- WHAT MUST BE TRUE: bullet list of testable assumptions.
-- WHAT WE ALREADY HAVE EVIDENCE FOR: cite ONLY what sources say.
-- WHAT IS STILL UNKNOWN: missing measurements; state experiment needed.
-  Numbers ONLY from cited planarian sources; else "UNKNOWN — requires measurement."
-- FIRST TEST TO VALIDATE: 5-8 concrete steps (organism, reagent, readout).
+- THE IDEA IN PLAIN ENGLISH: 3-5 sentence claim, then 5-8 sentence \
+explanation using simple analogies. No academic tone. No equations.
+- WHAT WE KNOW: bullet list, cite ONLY what sources say with [1], [2].
+- WHAT WE DON'T KNOW YET: missing measurements; state experiment needed. \
+Numbers ONLY from cited planarian sources; else "UNKNOWN — requires measurement."
+- WHAT THIS PREDICTS: bullet list of testable predictions. Tag each \
+[TESTABLE] or [REQUIRES MEASUREMENT FIRST].
+- PHASE-0 EXPERIMENT (7 steps): organism prep, materials, dose (ONLY from \
+planarian papers or "UNKNOWN"), controls, readout, stop/kill criteria, \
+success and fail criteria.
 - WHAT RESULT WOULD PROVE IT WRONG: specific falsification outcome.
 - NEXT 5 QUESTIONS I SHOULD ASK: questions to reduce biggest uncertainties.
 
@@ -299,12 +326,16 @@ Rate each as Low/Medium/High based on sources. If no data, state "No data".
 Generate testable hypotheses from the patterns. Write in plain English for a \
 technical non-expert. For EACH hypothesis use this format:
 - HYPOTHESIS: one-sentence title.
-- THE IDEA IN PLAIN ENGLISH: 3-6 sentences, simple analogies, no academic tone.
-- WHAT MUST BE TRUE: bullet list of testable assumptions.
-- WHAT WE ALREADY HAVE EVIDENCE FOR: cite ONLY what sources say, refs [1], [2].
-- WHAT IS STILL UNKNOWN: missing measurements + needed experiments. \
+- THE IDEA IN PLAIN ENGLISH: 3-5 sentence claim, then 5-8 sentence \
+explanation using simple analogies. No academic tone. No equations.
+- WHAT WE KNOW: bullet list, cite ONLY what sources say with [1], [2].
+- WHAT WE DON'T KNOW YET: missing measurements + needed experiments. \
 Numbers ONLY from cited planarian sources; else "UNKNOWN — requires measurement."
-- FIRST TEST TO VALIDATE: 5-8 concrete steps.
+- WHAT THIS PREDICTS: bullet list of testable predictions. Tag each \
+[TESTABLE] or [REQUIRES MEASUREMENT FIRST].
+- PHASE-0 EXPERIMENT (7 steps): organism prep, materials, dose (ONLY from \
+planarian papers or "UNKNOWN"), controls, readout, stop/kill criteria, \
+success and fail criteria.
 - WHAT RESULT WOULD PROVE IT WRONG: falsification outcome.
 - NEXT 5 QUESTIONS I SHOULD ASK: questions to reduce biggest uncertainties.
 
@@ -1213,11 +1244,34 @@ def _try_parse_hypothesis(text: str) -> Hypothesis | None:
         elif "WHAT MUST BE TRUE" in upper_line:
             current_sub = "assumptions"
             continue
+        elif (
+            "WHAT WE KNOW" in upper_line
+            and "DON'T" not in upper_line
+            and "DON\u2019T" not in upper_line
+            and "NOT" not in upper_line
+        ):
+            current_sub = "evidence_for"
+            continue
         elif "WHAT WE ALREADY HAVE EVIDENCE" in upper_line:
             current_sub = "evidence_for"
             continue
+        elif (
+            "WHAT WE DON'T KNOW" in upper_line
+            or "WHAT WE DON\u2019T KNOW" in upper_line
+        ):
+            current_sub = "unknowns"
+            continue
         elif "WHAT IS STILL UNKNOWN" in upper_line:
             current_sub = "unknowns"
+            continue
+        elif "WHAT THIS PREDICTS" in upper_line:
+            current_sub = "predicts"
+            continue
+        elif (
+            "PHASE-0 EXPERIMENT" in upper_line
+            or "PHASE 0 EXPERIMENT" in upper_line
+        ):
+            current_sub = "test"
             continue
         elif "FIRST TEST TO VALIDATE" in upper_line or "FIRST TEST:" in upper_line:
             current_sub = "test"
@@ -1241,8 +1295,13 @@ def _try_parse_hypothesis(text: str) -> Hypothesis | None:
                 predicted_impact = stripped
         elif current_sub == "assumptions" and bullet:
             assumptions.append(bullet)
+        elif current_sub == "evidence_for" and bullet:
+            # Evidence items stored as assumptions with tag
+            assumptions.append(f"[EVIDENCED] {bullet}")
         elif current_sub == "unknowns" and bullet:
             assumptions.append(f"[UNKNOWN] {bullet}")
+        elif current_sub == "predicts" and bullet:
+            assumptions.append(f"[PREDICTS] {bullet}")
 
     # --- Fallback: old single-line format parsing ---
     if not predicted_impact:
