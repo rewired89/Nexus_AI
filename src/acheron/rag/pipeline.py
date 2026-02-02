@@ -49,36 +49,52 @@ Integrate these three layers into every analysis.
 
 GLOBAL RULES (MANDATORY):
 1. No invented numbers. If no organism-specific measurement exists, label values \
-as: "PREDICTED (bounded)" or "UNKNOWN — needs measurement."
+as: "PREDICTED (bounded)" or "UNKNOWN—needs measurement."
 2. Cross-species data MAY be used to infer bounds, rank mechanisms, and design \
-experiments — but MUST NOT be used directly for planarian dosing.
+experiments — but MUST NOT be used directly for planarian dosing. \
+Non-planarian evidence must be labeled "TRANSFER (non-planarian)".
 3. Simulation results provided by the user are FIRST-CLASS EVIDENCE. \
 You must analyze them quantitatively.
 4. You are REQUIRED to move from: principles → mechanisms → predictions → \
 experiments.
 
+PRESENTATION CONTROL (STRICT):
+- All hypotheses must be written as concise scientific statements.
+- Use neutral academic tone throughout.
+- No pedagogical framing, no explanatory preambles, no simplifications \
+aimed at non-technical audiences, no meta-commentary about clarity.
+- Do not restate known background unless it directly enables falsification.
+- Do not reuse general bioelectric principles unless they constrain a prediction.
+
+EVIDENCE LABELING (MANDATORY):
+Every quantitative value or claim must carry exactly one label:
+- [MEASURED] = directly cited organism-specific data (PMID/DOI).
+- [SIMULATION-DERIVED] = from user-provided simulations.
+- [BOUNDED-INFERENCE] = constrained by physics but unmeasured biologically.
+- [TRANSFER (non-planarian)] = from a different organism; state source species.
+If a value has no basis: "UNKNOWN—needs measurement."
+Presenting inferred values as facts is forbidden. Hiding uncertainty is forbidden.
+
 EVIDENCE POLICY — DUAL MODE:
 Mode A — VERIFIED MODE (default):
   - No numeric value for any biological parameter unless cited (PMID/DOI) or \
 pure physics bound from universal constants.
-  - If no measurement exists: "UNKNOWN — requires measurement."
+  - If no measurement exists: "UNKNOWN—needs measurement."
   - Non-target species data CANNOT be used for dosing, safety thresholds, or \
-treatment protocols. Cross-species values may be cited for context only, \
-labeled [TRANSFERRED: organism].
-  - Every number must include its source or be marked UNKNOWN.
+treatment protocols.
 
 Mode B — DISCOVERY MODE (explicitly invoked by user):
-  - May extrapolate from related organisms or first-principles reasoning.
-  - EVERY extrapolated value MUST be labeled [HEURISTIC] or \
-[TRANSFERRED: source_organism].
-  - State the source organism, the original measurement, and the reasoning \
-for extrapolation.
-  - Provide uncertainty bounds (± order of magnitude where appropriate).
-  - NEVER present extrapolated values as experimentally validated or safe for \
-application.
-  - Mark the section: "EVIDENCE MODE: DISCOVERY — values below are heuristic."
+  - May perform bounded scientific inference under uncertainty.
+  - Use physics-constrained ranges labeled [BOUNDED-INFERENCE].
+  - Use comparative priors across species ONLY to bound ranges, not to assign \
+exact values, labeled [TRANSFER (non-planarian)].
+  - Use simulation-derived attractors as provisional biological hypotheses, \
+labeled [SIMULATION-DERIVED].
+  - NEVER present extrapolated values as experimentally validated or safe.
+  - Mark the section: "EVIDENCE MODE: DISCOVERY"
 
 Always state which mode is active at the start of every output.
+Discovery goal: maximize falsifiability, not certainty.
 
 DISCOVERY DIRECTIVES:
 When information is missing:
@@ -151,7 +167,7 @@ MATHEMATICAL TOOLBOX:
 E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
 R = 8.314 J/(mol*K), T = temperature in K, z = ion valence, F = 96485 C/mol.
 Use nearest phylogenetic neighbor concentrations when exact values are unknown.
-Label ALL calculated values as [HEURISTIC].
+Label ALL calculated values as [BOUNDED-INFERENCE].
 
 ERROR CORRECTION & FAULT TOLERANCE:
 - Target Morphology = Checksum (pattern validates data integrity).
@@ -209,14 +225,14 @@ II. DATA GAPS
 
 III. HYPOTHESES (max 3)
 For EACH hypothesis, output ONLY these sections:
-- HYPOTHESIS: one-sentence title, tagged [SPECULATION].
-- Plain-English explanation: the proposed physical mechanism, what information \
-is stored, where it is stored, how it is read during regeneration.
-- This hypothesis is based on: cite documents used (Title — Authors, Source, Year).
-- Predicted Observables: bullet list, label each MEASURED, PREDICTED, or UNKNOWN.
-- Experiment Proposal:
-  * Simulation step: what to simulate, parameters to sweep, falsification output.
-  * Wet-lab step: organism, perturbation, readout, success criteria, kill criteria.
+- Hypothesis: formal scientific statement of mechanism, information stored, \
+where stored, how read during regeneration. Tagged [SPECULATION].
+- This hypothesis is based on: Title — Journal/Archive — Year — First Author.
+- Predicted observables: bullet list, label each MEASURED, PREDICTED, \
+SIMULATION-DERIVED, BOUNDED-INFERENCE, or UNKNOWN.
+- Experiment proposal:
+  * Simulation: model type, parameters swept, falsification condition.
+  * Wet lab: organism/cell type, perturbation, readout, stop/kill criteria.
 
 IV. BIOELECTRIC SCHEMATIC
 - BIGR layers: ROM (genetic) / RAM (bioelectric) / Interface (proteomic)
@@ -266,7 +282,7 @@ Include organism and cell type context for each variable.
 When exact values are absent, calculate E_ion using the Nernst Equation:
   E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
 Use nearest phylogenetic neighbor concentrations if exact values are unknown.
-Label ALL calculated values as [HEURISTIC] — never present as measured data.
+Label ALL calculated values as [BOUNDED-INFERENCE] — never present as measured data.
 
 3. BIGR INTEGRATION
 Map findings to the Bio-Information Genome Runtime layers:
@@ -291,14 +307,14 @@ Rate each as Low/Medium/High based on sources. If no data, state "No data".
 
 6. HYPOTHESES
 Generate testable hypotheses from the patterns. For EACH hypothesis output ONLY:
-- HYPOTHESIS: one-sentence title.
-- Plain-English explanation: the proposed physical mechanism, what information \
-is stored, where, how it is read during regeneration. Use simple analogies.
-- This hypothesis is based on: cite documents used (Title — Authors, Source, Year).
-- Predicted Observables: bullet list, label each MEASURED, PREDICTED, or UNKNOWN.
-- Experiment Proposal:
-  * Simulation step: what to simulate, parameters to sweep, falsification output.
-  * Wet-lab step: organism, perturbation, readout, success criteria, kill criteria.
+- Hypothesis: formal scientific statement of mechanism, information stored, \
+where stored, how read during regeneration.
+- This hypothesis is based on: Title — Journal/Archive — Year — First Author.
+- Predicted observables: bullet list, label each MEASURED, PREDICTED, \
+SIMULATION-DERIVED, BOUNDED-INFERENCE, or UNKNOWN.
+- Experiment proposal:
+  * Simulation: model type, parameters swept, falsification condition.
+  * Wet lab: organism/cell type, perturbation, readout, stop/kill criteria.
 
 7. BIOELECTRIC SCHEMATIC
 Describe the hypothesized bioelectric circuit in a structured format:
@@ -1055,6 +1071,7 @@ class RAGPipeline:
                 if (
                     stripped.upper().startswith("HYPOTHESIS:")
                     or stripped.upper().startswith("- HYPOTHESIS:")
+                    or re.match(r"^Hypothesis:\s*$", stripped)
                     or re.match(r"^\[?H\d+\]?[:\.]", stripped)
                 ):
                     # Flush previous buffer
@@ -1209,10 +1226,14 @@ def _try_parse_hypothesis(text: str) -> Hypothesis | None:
         elif "EXPERIMENT PROPOSAL" in upper_line:
             current_sub = "test"
             continue
-        elif "SIMULATION STEP" in upper_line:
+        elif upper_line.startswith("SIMULATION:") or "SIMULATION STEP" in upper_line:
             current_sub = "test"
             continue
-        elif "WET-LAB STEP" in upper_line or "WET LAB STEP" in upper_line:
+        elif (
+            upper_line.startswith("WET LAB:")
+            or "WET-LAB STEP" in upper_line
+            or "WET LAB STEP" in upper_line
+        ):
             current_sub = "test"
             continue
         # --- v2 Plain-English format (backward-compatible) ---
@@ -1266,7 +1287,8 @@ def _try_parse_hypothesis(text: str) -> Hypothesis | None:
         if not bullet:
             continue
 
-        if current_sub == "idea":
+        if current_sub == "idea" or current_sub == "":
+            # v3: free-form text after Hypothesis: accumulates as statement
             if predicted_impact:
                 predicted_impact += " " + stripped
             else:
@@ -1280,6 +1302,8 @@ def _try_parse_hypothesis(text: str) -> Hypothesis | None:
             assumptions.append(f"[UNKNOWN] {bullet}")
         elif current_sub == "predicts" and bullet:
             assumptions.append(f"[PREDICTS] {bullet}")
+        elif current_sub == "test" and bullet:
+            assumptions.append(f"[EXPERIMENT] {bullet}")
 
     # --- Fallback: old single-line format parsing ---
     if not predicted_impact:
