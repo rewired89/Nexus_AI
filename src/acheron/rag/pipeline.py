@@ -57,6 +57,13 @@ Non-planarian evidence must be labeled "TRANSFER (non-planarian)".
 You must analyze them quantitatively.
 4. You are REQUIRED to move from: principles → mechanisms → predictions → \
 experiments.
+5. Every non-trivial claim must be tagged: [EVIDENCE], [INFERENCE], or \
+[SPECULATION]. Every [EVIDENCE] claim must include at least one citation.
+6. Citation format: Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID. \
+Prefer peer-reviewed sources; label preprints [PREPRINT]. If using abstract \
+only, mark [ABSTRACT-ONLY].
+7. Never output "UNKNOWN" without immediately proposing the minimal measurement \
+to obtain the value.
 
 PRESENTATION CONTROL (STRICT):
 - All hypotheses must be written as concise scientific statements.
@@ -213,50 +220,50 @@ Query: {query}
 
 Respond with the following mandatory structure. Tag EVERY sentence with \
 [EVIDENCE], [INFERENCE], [SPECULATION], or [DATA GAP].
+Citation format: Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID.
 
-I. EVIDENCE SNAPSHOT
-- Bullet list of findings directly from sources. Each tagged [EVIDENCE].
-- Cite PMID/DOI for each claim. Format: "[EVIDENCE] claim text [1] (PMID:xxx)."
+1) Evidence Extracted
+- Bullet list of facts directly supported by citations. Tag each [EVIDENCE].
+- Bullet list of facts supported by simulations. Tag each [SIMULATION].
+- Cite with full format. If abstract only: [ABSTRACT-ONLY]. If preprint: [PREPRINT].
 - If organism-specific data is absent, state [DATA GAP] instead of generalizing.
 
-II. DATA GAPS
-- Bullet list of missing measurements, tagged [DATA GAP].
-- For each gap, state what measurement is needed and in what organism/tissue.
-
-III. HYPOTHESES (max 3)
-For EACH hypothesis, output ONLY these sections:
-- Hypothesis: formal scientific statement of mechanism, information stored, \
-where stored, how read during regeneration. Tagged [SPECULATION].
-- This hypothesis is based on: Title — Journal/Archive — Year — First Author.
+2) Hypothesis (max 3)
+For EACH hypothesis:
+- One paragraph: falsifiable, formal scientific language. Describe the proposed \
+physical mechanism, what information is stored, where, and how it is read \
+during regeneration. Tagged [SPECULATION].
+- This hypothesis is based on:
+  * Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID [1]
+  * (repeat for all sources used)
 - Predicted observables: bullet list, label each MEASURED, PREDICTED, \
 SIMULATION-DERIVED, BOUNDED-INFERENCE, or UNKNOWN.
-- Experiment proposal:
-  * Simulation: model type, parameters swept, falsification condition.
-  * Wet lab: organism/cell type, perturbation, readout, stop/kill criteria.
 
-IV. BIOELECTRIC SCHEMATIC
+3) Experiment Proposal
+For EACH hypothesis:
+A) Simulation: model type, parameters swept, expected outputs, falsification \
+criteria. State what parameter is measured (e.g. T_hold, BER, Gj).
+B) Wet-lab Phase-0 (cheapest): materials, steps, readout, success criteria, \
+kill criteria, timeline, cost estimate, parameter measured.
+C) Wet-lab Phase-1 (stronger): same structure as Phase-0.
+
+4) Transfer Logic
+- If the hypothesis relies on planarian-specific traits, propose an alternative \
+substrate and justify with citations.
+- Decision gate: "If X fails, switch to Y substrate."
+
+V. BIOELECTRIC SCHEMATIC
 - BIGR layers: ROM (genetic) / RAM (bioelectric) / Interface (proteomic)
 - Format: "[Trigger] -> [Bioelectric change] -> [Downstream pathway] -> [Outcome]"
 - Label each component [EVIDENCED], [INFERRED], or [SPECULATIVE].
-- If insufficient data, state what is missing. Do NOT invent Vmem values.
-
-V. CROSS-SPECIES NOTES
-- Compare findings across model organisms where evidence exists.
-- State where evidence transfers and where gaps remain.
 
 VI. BIM SPECIFICATION (when bioelectric states are discussed)
 - For each parameter (T_hold, E_bit, BER, entropy, capacity):
-  If a cited measurement exists: state value + citation.
-  If NO measurement exists: state "UNKNOWN — requires [specific experiment]."
-- State the pure physics formula that WOULD apply if inputs were measured.
-- Map components to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin).
-- Do NOT output computed values from unmeasured inputs.
+  Cite measured value OR state "UNKNOWN—needs measurement" + propose \
+the minimal measurement to obtain it.
+- Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin).
 
-VII. MINIMAL WET-LAB TEST (MVP)
-- 4-6 step protocol for a 1-2 week baseline experiment.
-- Materials list, expected outcomes, failure modes.
-
-VIII. NEXT COLLECTION QUERIES
+VII. NEXT COLLECTION QUERIES
 - 5-10 exact PubMed/PMC/bioRxiv queries to fill the data gaps identified above."""
 
 DISCOVERY_TEMPLATE = """\
@@ -306,53 +313,41 @@ When hypotheses involve experimental testing, evaluate model organisms:
 Rate each as Low/Medium/High based on sources. If no data, state "No data".
 
 6. HYPOTHESES
-Generate testable hypotheses from the patterns. For EACH hypothesis output ONLY:
-- Hypothesis: formal scientific statement of mechanism, information stored, \
-where stored, how read during regeneration.
-- This hypothesis is based on: Title — Journal/Archive — Year — First Author.
+Generate testable hypotheses from the patterns. For EACH hypothesis:
+- Hypothesis: one falsifiable paragraph in formal scientific language. \
+Describe the proposed mechanism, what information is stored, where, \
+how it is read during regeneration.
+- This hypothesis is based on:
+  * Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID [n]
+  * (repeat for all sources used)
 - Predicted observables: bullet list, label each MEASURED, PREDICTED, \
 SIMULATION-DERIVED, BOUNDED-INFERENCE, or UNKNOWN.
-- Experiment proposal:
-  * Simulation: model type, parameters swept, falsification condition.
-  * Wet lab: organism/cell type, perturbation, readout, stop/kill criteria.
 
-7. BIOELECTRIC SCHEMATIC
-Describe the hypothesized bioelectric circuit in a structured format:
-"[Trigger] -> [Bioelectric change (Vmem/EF/Gj)] -> [Downstream pathway] -> [Outcome]"
-If multiple circuits are relevant, describe each. Label components as \
-[EVIDENCED], [INFERRED], or [SPECULATIVE].
-Include logic gate equivalents where applicable (NOT/AND via bioelectric flux).
+7. EXPERIMENT PROPOSAL
+For EACH hypothesis:
+A) Simulation: model type, parameters swept, expected outputs, falsification \
+criteria. State what parameter is measured (e.g. T_hold, BER, Gj).
+B) Wet-lab Phase-0 (cheapest): materials, steps, readout, success criteria, \
+kill criteria, timeline, cost estimate, parameter measured.
+C) Wet-lab Phase-1 (stronger): same structure as Phase-0.
 
-8. PROTOCOL SPECIFICATION
-For the recommended experimental approach, generate a Technical Spec Sheet:
-- Write Method: (optogenetic stimulation, ionophore bath, galvanotaxis, etc.)
-- Read Method: (voltage-sensitive dyes, micro-electrode arrays, sequencing, etc.)
-- Logic Gate Equivalent: how the substrate performs NOT/AND via bioelectric flux
-- Estimated SNR: signal-to-noise ratio for the read method
-- Error Correction: biological redundancy mechanism
+8. TRANSFER LOGIC
+- If the hypothesis relies on planarian-specific traits, propose an alternative \
+substrate and justify with citations.
+- Decision gate: "If X fails, switch to Y substrate."
 
-9. VALIDATION PATH
-Propose specific, low-cost ways to test the hypotheses:
-- Re-analysis of existing datasets
-- Computational simulations
-- Targeted experimental designs
-- Cross-species comparison strategies
+9. BIOELECTRIC SCHEMATIC
+Describe the hypothesized bioelectric circuit:
+"[Trigger] -> [Bioelectric change (Vmem/EF/Gj)] -> [Downstream pathway] -> \
+[Outcome]"
+Label components as [EVIDENCED], [INFERRED], or [SPECULATIVE].
 
-10. FAULT TOLERANCE MAPPING
-Map the biological system's regeneration to RAID-level redundancy:
-- Target Morphology = Checksum (stored pattern validates data integrity)
-- Regeneration = RAID rebuild (tissue repair from distributed state)
-- Colony/tissue redundancy = Replication factor
-Specify which RAID level best models the organism's fault tolerance.
-
-11. BIM SPECIFICATION
+10. BIM SPECIFICATION
 For any claimed bioelectric state or "biological bit":
 - For EACH measurable parameter (T_hold, E_bit, BER, entropy, capacity):
-  If a cited measurement exists: state value + source.
-  If NOT measured: state "UNKNOWN — requires [specific experiment]."
-  State the pure physics formula that would apply if inputs were measured.
-- NO-NUMERIC-INVENTION: Do NOT compute values from unmeasured inputs.
-  Instead, specify what needs measuring and how to measure it.
+  Cite measured value OR state "UNKNOWN—needs measurement" + propose \
+the minimal measurement to obtain it.
+- Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin).
 Map to Hardware Library: CPU (Nav/Kv arrays), RAM (Vmem gradient), \
 SSD (Innexin connectivity patterns).
 
@@ -951,7 +946,10 @@ class RAGPipeline:
             upper = stripped.upper()
 
             # Detect section headers
-            if any(m in upper for m in ["EVIDENCE EXTRACTION", "EVIDENCE —", "1. EVIDENCE"]):
+            if any(m in upper for m in [
+                "EVIDENCE EXTRACTION", "EVIDENCE EXTRACTED",
+                "EVIDENCE —", "1. EVIDENCE", "1) EVIDENCE",
+            ]):
                 current_section = "evidence"
                 continue
             elif any(m in upper for m in ["VARIABLE EXTRACTION", "VARIABLE —", "2. VARIABLE"]):
@@ -974,7 +972,25 @@ class RAGPipeline:
                 continue
             elif any(
                 m in upper
-                for m in ["BIOELECTRIC SCHEMATIC", "7. BIOELECTRIC", "## BIOELECTRIC"]
+                for m in [
+                    "EXPERIMENT PROPOSAL", "7. EXPERIMENT",
+                ]
+            ):
+                current_section = "validation"
+                continue
+            elif any(
+                m in upper
+                for m in ["TRANSFER LOGIC", "8. TRANSFER"]
+            ):
+                current_section = "cross_species"
+                continue
+            elif any(
+                m in upper
+                for m in [
+                    "BIOELECTRIC SCHEMATIC",
+                    "9. BIOELECTRIC", "7. BIOELECTRIC",
+                    "## BIOELECTRIC",
+                ]
             ):
                 current_section = "schematic"
                 continue
@@ -1236,7 +1252,19 @@ def _try_parse_hypothesis(text: str) -> Hypothesis | None:
         ):
             current_sub = "test"
             continue
-        # --- v2 Plain-English format (backward-compatible) ---
+        elif "PHASE-0" in upper_line or "PHASE 0" in upper_line:
+            current_sub = "test"
+            continue
+        elif "PHASE-1" in upper_line or "PHASE 1" in upper_line:
+            current_sub = "test"
+            continue
+        elif "TRANSFER LOGIC" in upper_line:
+            current_sub = "transfer"
+            continue
+        elif "EVIDENCE EXTRACTED" in upper_line:
+            current_sub = "evidence_for"
+            continue
+        # --- v2 format (backward-compatible) ---
         elif "THE IDEA IN PLAIN ENGLISH" in upper_line:
             current_sub = "idea"
             continue
@@ -1304,6 +1332,8 @@ def _try_parse_hypothesis(text: str) -> Hypothesis | None:
             assumptions.append(f"[PREDICTS] {bullet}")
         elif current_sub == "test" and bullet:
             assumptions.append(f"[EXPERIMENT] {bullet}")
+        elif current_sub == "transfer" and bullet:
+            assumptions.append(f"[TRANSFER] {bullet}")
 
     # --- Fallback: old single-line format parsing ---
     if not predicted_impact:

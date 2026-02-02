@@ -105,6 +105,13 @@ Non-planarian evidence must be labeled "TRANSFER (non-planarian)".
 You must analyze them quantitatively.
 4. You are REQUIRED to move from: principles → mechanisms → predictions → \
 experiments.
+5. Every non-trivial claim must be tagged: [EVIDENCE], [INFERENCE], or \
+[SPECULATION]. Every [EVIDENCE] claim must include at least one citation.
+6. Citation format: Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID. \
+Prefer peer-reviewed sources; label preprints [PREPRINT]. If using abstract \
+only, mark [ABSTRACT-ONLY].
+7. Never output "UNKNOWN" without immediately proposing the minimal measurement \
+to obtain the value.
 
 PRESENTATION CONTROL (STRICT):
 - All hypotheses must be written as concise scientific statements.
@@ -265,27 +272,33 @@ HYPOTHESIS_PROMPT = _BASE_IDENTITY + """
 MODE: HYPOTHESIS GENERATION (MODE 2)
 Using Inference to the Best Explanation (IBE), generate ranked hypotheses.
 
-EVIDENCE CLAIMS
-(Same structured format as MODE 1 — extract claims first)
+DISCOVERY REQUIREMENT (PERFORM BEFORE WRITING HYPOTHESIS):
+Do a targeted retrieval pass across the source passages:
+- Planarian membrane potential imaging / voltage-sensitive dye studies
+- Planarian gap junction / innexin studies
+- Bioelectric control of polarity (e.g. two-headed phenotypes)
+- Vertebrate analogs (connexins, Xenopus, zebrafish regeneration bioelectricity)
+Summarize each source found in 1-2 sentences with citations.
 
-CLAIM RELATIONSHIPS
-(Same structured format as MODE 1)
+OUTPUT SECTIONS (use exact headings):
 
-HYPOTHESES
-Generate at least 2 alternative hypotheses plus a leading hypothesis.
-Output ONLY the following sections per hypothesis (no extra headers).
+1) Evidence Extracted
+- Bullet list of facts directly supported by citations. Tag each [EVIDENCE].
+- Bullet list of facts supported by simulations. Tag each [SIMULATION].
+- Citation format: Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID.
+- If using abstract only, mark [ABSTRACT-ONLY].
+- If using preprints, mark [PREPRINT].
 
-For EACH hypothesis, use EXACTLY this format:
-
-Hypothesis:
-<single coherent hypothesis in formal scientific language describing: \
-the proposed physical mechanism, what information is stored, where it is \
-stored, and how it is read during regeneration>
+2) Hypothesis
+One paragraph per hypothesis: falsifiable, with measurable observables. \
+Written in formal scientific language. Describe the proposed physical \
+mechanism, what information is stored, where, and how it is read during \
+regeneration. Generate at least 2 alternative hypotheses plus a leading one.
 
 This hypothesis is based on:
-- Title — Journal / Archive — Year — First Author [1]
-- Title — Journal / Archive — Year — First Author [2]
-(Only cite documents you actually used from the retrieved sources.)
+- Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID [1]
+- Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID [2]
+(Only cite documents you actually used.)
 
 Predicted observables:
 - Observable 1 (measurable variable + unit or UNKNOWN—needs measurement) \
@@ -297,36 +310,42 @@ Predicted observables:
 (Label each: MEASURED, PREDICTED, SIMULATION-DERIVED, BOUNDED-INFERENCE, \
 or UNKNOWN.)
 
-Experiment proposal:
-Simulation:
-- Model type
-- Parameters swept
-- Falsification condition
-Wet lab:
-- Organism / cell type
-- Measurement method
-- Perturbation
-- Readout
-- Stop / kill criteria
+3) Experiment Proposal
+A) Simulation experiments:
+   - Model type (inputs, parameters swept, expected outputs)
+   - Falsification criteria
+   - What parameter does this measure? (e.g. T_hold, BER, Gj, propagation speed)
 
-If insufficient data exists, still generate a hypothesis but flag it as: \
-"Simulation-derived; biological validation pending."
+B) Wet-lab Phase-0 (cheapest / fastest):
+   - Materials + cost estimate
+   - Steps (numbered)
+   - Readout
+   - Success criteria
+   - Kill criteria
+   - Timeline estimate
+   - What parameter does this measure?
+
+C) Wet-lab Phase-1 (stronger validation):
+   - Materials + cost estimate
+   - Steps (numbered)
+   - Readout
+   - Success criteria
+   - Kill criteria
+   - Timeline estimate
+   - What parameter does this measure?
+
+4) Transfer Logic
+- If the hypothesis relies on planarian-specific traits, propose an alternative \
+substrate and justify it with citations.
+- Decision gate: "If X fails, switch to Y substrate."
 
 ---
-
-SUBSTRATE SELECTION MATRIX
-For hypotheses involving experimental testing, evaluate model organisms:
-| Criteria | Planarian | Xenopus | Physarum | Organoid |
-| Ease of Vmem manipulation | ... | ... | ... | ... |
-| Data persistence / memory | ... | ... | ... | ... |
-| I/O speed (response time) | ... | ... | ... | ... |
-| Relevance to hypothesis | ... | ... | ... | ... |
-Rate as Low/Medium/High. If no source data, state "No data".
 
 BIM SPECIFICATION
 For any claimed bioelectric state or "biological bit":
 - For EACH parameter (T_hold, E_bit, BER, entropy, capacity):
-  Cite measured value OR state "UNKNOWN—needs measurement."
+  Cite measured value OR state "UNKNOWN—needs measurement" + propose \
+the minimal measurement to obtain it.
 - State the pure physics formula. Do NOT compute from unmeasured inputs.
 - Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin).
 
@@ -357,10 +376,11 @@ CLAIM RELATIONSHIPS
 
 HYPOTHESES
 Generate testable hypotheses underlying the proposed design.
-Use the same format as MODE 2: "Hypothesis:" (formal scientific statement), \
-"This hypothesis is based on:" (document citations), "Predicted observables:" \
-(labeled MEASURED/PREDICTED/SIMULATION-DERIVED/BOUNDED-INFERENCE/UNKNOWN), \
-"Experiment proposal:" with Simulation and Wet lab sub-sections.
+Use the same format as MODE 2: "Evidence Extracted" (tagged [EVIDENCE] / \
+[SIMULATION]), "Hypothesis" (formal scientific paragraph + citations), \
+"Predicted observables" (labeled MEASURED/PREDICTED/SIMULATION-DERIVED/\
+BOUNDED-INFERENCE/UNKNOWN), "Experiment Proposal" (A: Simulation, B: \
+Phase-0, C: Phase-1), "Transfer Logic" (alternative substrate + decision gate).
 
 SYSTEM DESIGN
 Describe the proposed architecture/protocol/system with explicit labels for:
@@ -467,7 +487,7 @@ def parse_evidence_graph(raw_output: str) -> EvidenceGraph:
         upper = stripped.upper()
 
         # Section detection
-        if "EVIDENCE CLAIM" in upper and not in_relationships:
+        if ("EVIDENCE CLAIM" in upper or "EVIDENCE EXTRACTED" in upper) and not in_relationships:
             in_claims = True
             in_relationships = False
             continue
@@ -636,8 +656,8 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
                 "SUBSTRATE SELECTION", "PROTOCOL SPECIFICATION",
                 "FAULT TOLERANCE", "STRATEGIC RECOMMEND",
                 "BIM QUANTIFICATION", "BIM SPECIFICATION",
-                "GRAPH TOPOLOGY",
-                "HARDWARE SPEC",
+                "GRAPH TOPOLOGY", "TRANSFER LOGIC",
+                "HARDWARE SPEC", "NEXT COLLECTION",
             ]
         ):
             if current:
@@ -692,6 +712,13 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
             or "WET LAB STEP" in upper
         ):
             current["_section"] = "minimal_test"
+        elif "PHASE-0" in upper or "PHASE 0" in upper:
+            current["_section"] = "minimal_test"
+        elif "PHASE-1" in upper or "PHASE 1" in upper:
+            current["_section"] = "minimal_test"
+        elif "TRANSFER LOGIC" in upper:
+            current["_section"] = "known_unknowns"
+            current.setdefault("known_unknowns", [])
 
         # --- v2 Plain-English section headers (backward-compatible) ---
         elif "THE IDEA IN PLAIN ENGLISH" in upper:
