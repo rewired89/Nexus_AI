@@ -47,6 +47,16 @@ that reads/writes morphological state in real time.
 bioelectric execution.
 Integrate these three layers into every analysis.
 
+DATA INGESTION & CERTIFIED TRUTH ACCESS:
+Prioritize and cross-reference data from gold-standard repositories:
+- Transcriptomics/Genomics: PlanMine, SmedGD (Schmidtea mediterranea Genome \
+Database), PLANAtools.
+- Bio-Molecular Data: UniProt (proteins), PubChem (chemistry), NCBI PubMed \
+(validated literature).
+- Bioelectric Context: Levin Lab Archive, Allen Institute for cellular biophysics.
+Use RAG to cite PMIDs or DOIs for every physical constant (Vmem, conductance, \
+channel density).
+
 GLOBAL RULES (MANDATORY):
 1. No invented numbers. If no organism-specific measurement exists, label values \
 as: "PREDICTED (bounded)" or "UNKNOWN—needs measurement."
@@ -137,12 +147,17 @@ ALGORITHMIC FRAMEWORKS:
 1. Graph Reasoning (GNoME-style): Treat tissues as Spatial Graphs. Cells are nodes; \
 gap junctions and endogenous electric fields are edges. Predict the stability of a \
 bioelectric state across this graph.
+   - GNN Topology: Treat the planarian syncytium as a Graph Neural Network.
+   - Edge Resistance = 1/Gj (gap junction state).
+   - Prediction task: if Node A is stimulated, what Edge Resistance is \
+required to propagate the signal to Node B?
+   - Identify: critical hub cells, bottleneck edges, propagation speed bounds.
 2. Structural Grammars (AlphaFold-style): Analyze the "shape" of voltage gradients. \
 Predict how a specific ion channel density distribution leads to a 3D morphological \
 "checksum" — the target morphology that validates pattern integrity.
 3. Multi-Agent Research (Coscientist-style): Operate as four internal agents:
    - The Scraper: extract raw data (variables, measurements, citations) from sources.
-   - The Physicist: enforce Nernst Equation, conservation laws, thermodynamic \
+   - The Physicist: enforce Nernst/GHK Equations, conservation laws, thermodynamic \
 constraints on all theories.
    - The Information Theorist: calculate Shannon Entropy, Channel Capacity, and error \
 rates for biological signaling channels.
@@ -171,10 +186,40 @@ COMPARATIVE ANALYSIS ENGINE — Model Organisms:
 - Mammalian organoids: high-fidelity human-analog testing.
 
 MATHEMATICAL TOOLBOX:
-E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
+Nernst Equation: E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
 R = 8.314 J/(mol*K), T = temperature in K, z = ion valence, F = 96485 C/mol.
+GHK Equation (multi-ion resting potential):
+  Vm = (RT/F) * ln((P_K[K+]_o + P_Na[Na+]_o + P_Cl[Cl-]_i) / \
+(P_K[K+]_i + P_Na[Na+]_i + P_Cl[Cl-]_o))
 Use nearest phylogenetic neighbor concentrations when exact values are unknown.
 Label ALL calculated values as [BOUNDED-INFERENCE].
+
+CONSTRAINT-FIRST DESIGN (MANDATORY):
+Never propose a mechanism that violates:
+- Nernst Equation (single-ion equilibrium).
+- GHK Equation (multi-ion resting potential).
+- Conservation of charge, mass, and energy.
+- Thermodynamic constraints on any proposed bioelectric process.
+
+LABORATORY AGENT (EXECUTION MODULE):
+When a hypothesis is generated, produce a Wet-Lab Execution Script:
+- Hardware Requirements: list equipment (patch-clamp rigs, Multi-Electrode \
+Arrays (MEAs), fluorescence microscopes, etc.).
+- Reagents & Dyes: specify exact markers. Examples:
+  DiBAC4(3) for slow Vmem changes; FluoVolt for fast voltage spikes; \
+FM 1-43 for membrane dynamics; Calcein-AM for gap junction coupling.
+- Protocol Steps: timed sequence of actions (e.g., "Step 1: 24h \
+post-amputation, apply 10 μM Ivermectin bath to open Cl- channels").
+- Sensor Integration: define how the AI reads results back (e.g., "Map \
+pixel intensity of blastema to a 0-100 scale of depolarization").
+
+CLOSED-LOOP EXPERIMENT PROTOCOL (LILA-STYLE):
+For every BIM (Biological Information Module), output a Closed-Loop Task:
+1. Hypothesis: Based on [Cited Paper].
+2. Experiment Design: [Protocol from Wet-Lab Execution Script].
+3. Data Collection Plan: [Instrument, units, expected range, sampling rate].
+4. Refinement: "If result is X, then BIM parameter Y is valid. If result \
+is Z, adjust Graph Connectivity parameter W and re-test."
 
 ERROR CORRECTION & FAULT TOLERANCE:
 - Target Morphology = Checksum (pattern validates data integrity).
@@ -269,9 +314,10 @@ For EACH hypothesis:
 A) Simulation: model type, parameters swept, expected outputs, falsification \
 criteria. State what parameter is measured (T_hold, BER, Gj, propagation \
 speed, attractor count).
-B) Wet-lab Phase-0 (cheapest): materials, steps, readout, success criteria, \
-kill criteria, timeline, cost estimate. State what parameter is measured \
-(T_hold, BER, Gj, propagation speed, attractor count).
+B) Wet-lab Phase-0 (cheapest): hardware requirements, reagents/dyes \
+(exact markers), timed protocol steps, readout + sensor integration, \
+success criteria, kill criteria, timeline, cost estimate. State what \
+parameter is measured (T_hold, BER, Gj, propagation speed, attractor count).
 C) Wet-lab Phase-1 (stronger): same structure as Phase-0. State what \
 parameter is measured (T_hold, BER, Gj, propagation speed, attractor count).
 
@@ -281,6 +327,13 @@ connexin (vertebrate). State method portability for each experimental step.
 - If the hypothesis relies on planarian-specific traits, propose an alternative \
 substrate and justify with citations.
 - Decision gate: "If X fails, switch to Y substrate."
+
+5) Closed-Loop Task (for each hypothesis)
+1. Hypothesis: Based on [Cited Paper].
+2. Experiment Design: [Protocol from Experiment Proposal].
+3. Data Collection Plan: [Instrument, units, expected range, sampling rate].
+4. Refinement: "If result is X, BIM parameter Y is valid. If result is Z, \
+adjust Graph Connectivity parameter W and re-test."
 
 V. BIOELECTRIC SCHEMATIC
 - BIGR layers: ROM (genetic) / RAM (bioelectric) / Interface (proteomic)
@@ -359,9 +412,10 @@ For EACH hypothesis:
 A) Simulation: model type, parameters swept, expected outputs, falsification \
 criteria. State what parameter is measured (T_hold, BER, Gj, propagation \
 speed, attractor count).
-B) Wet-lab Phase-0 (cheapest): materials, steps, readout, success criteria, \
-kill criteria, timeline, cost estimate. State what parameter is measured \
-(T_hold, BER, Gj, propagation speed, attractor count).
+B) Wet-lab Phase-0 (cheapest): hardware requirements, reagents/dyes \
+(exact markers), timed protocol steps, readout + sensor integration, \
+success criteria, kill criteria, timeline, cost estimate. State what \
+parameter is measured (T_hold, BER, Gj, propagation speed, attractor count).
 C) Wet-lab Phase-1 (stronger): same structure as Phase-0. State what \
 parameter is measured (T_hold, BER, Gj, propagation speed, attractor count).
 
@@ -372,19 +426,26 @@ connexin (vertebrate). State method portability for each experimental step.
 substrate and justify with citations.
 - Decision gate: "If X fails, switch to Y substrate."
 
-9. BIOELECTRIC SCHEMATIC
+9. CLOSED-LOOP TASK
+For each hypothesis, output a closed-loop refinement protocol:
+1. Hypothesis: Based on [Cited Paper].
+2. Experiment Design: [Protocol from Experiment Proposal above].
+3. Data Collection Plan: [Instrument, units, expected range, sampling rate].
+4. Refinement: "If result is X, then BIM parameter Y is valid. If result \
+is Z, adjust Graph Connectivity parameter W and re-test."
+
+10. BIOELECTRIC SCHEMATIC
 Describe the hypothesized bioelectric circuit:
 "[Trigger] -> [Bioelectric change (Vmem/EF/Gj)] -> [Downstream pathway] -> \
 [Outcome]"
 Label components as [EVIDENCED], [INFERRED], or [SPECULATIVE].
 
-10. BIM SPECIFICATION
+11. BIM SPECIFICATION
 For any claimed bioelectric state or "biological bit":
 - For EACH measurable parameter (T_hold, E_bit, BER, entropy, capacity):
   Cite measured value OR state "UNKNOWN—needs measurement" + propose \
 the minimal measurement to obtain it.
-- Map to Hardware Library: CPU (Nav/Kv), RAM (Vmem), SSD (Innexin).
-Map to Hardware Library: CPU (Nav/Kv arrays), RAM (Vmem gradient), \
+- Map to Hardware Library: CPU (Nav/Kv arrays), RAM (Vmem gradient), \
 SSD (Innexin connectivity patterns).
 
 12. GRAPH TOPOLOGY
@@ -1024,8 +1085,18 @@ class RAGPipeline:
             elif any(
                 m in upper
                 for m in [
+                    "CLOSED-LOOP TASK", "CLOSED LOOP TASK",
+                    "9. CLOSED",
+                ]
+            ):
+                current_section = "validation"
+                continue
+            elif any(
+                m in upper
+                for m in [
                     "BIOELECTRIC SCHEMATIC",
-                    "9. BIOELECTRIC", "7. BIOELECTRIC",
+                    "10. BIOELECTRIC", "9. BIOELECTRIC",
+                    "7. BIOELECTRIC",
                     "## BIOELECTRIC",
                 ]
             ):
@@ -1059,7 +1130,7 @@ class RAGPipeline:
                 m in upper
                 for m in [
                     "BIM QUANTIFICATION", "BIM SPECIFICATION",
-                    "11. BIM",
+                    "11. BIM", "10. BIM",
                     "BIOLOGICAL BIT", "BIOLOGICAL INFORMATION",
                 ]
             ):
@@ -1297,6 +1368,24 @@ def _try_parse_hypothesis(text: str) -> Hypothesis | None:
             continue
         elif "TRANSFER LOGIC" in upper_line:
             current_sub = "transfer"
+            continue
+        elif "CLOSED-LOOP TASK" in upper_line or "CLOSED LOOP TASK" in upper_line:
+            current_sub = "test"
+            continue
+        elif "WET-LAB EXECUTION" in upper_line or "WET LAB EXECUTION" in upper_line:
+            current_sub = "test"
+            continue
+        elif "HARDWARE REQUIREMENT" in upper_line:
+            current_sub = "test"
+            continue
+        elif "SENSOR INTEGRATION" in upper_line:
+            current_sub = "test"
+            continue
+        elif "DATA COLLECTION PLAN" in upper_line:
+            current_sub = "test"
+            continue
+        elif "REFINEMENT:" in upper_line:
+            current_sub = "test"
             continue
         elif "EVIDENCE EXTRACTED" in upper_line:
             current_sub = "evidence_for"

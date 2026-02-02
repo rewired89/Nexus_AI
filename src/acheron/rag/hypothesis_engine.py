@@ -7,11 +7,14 @@ Implements:
 4. Falsification-First Output (Popper-style)
 5. Uncertainty Calibration
 6. Guardrails Against Hallucination
+7. Laboratory Agent (Wet-Lab Execution Scripts)
+8. Closed-Loop Experiment Protocols (Lila-style refinement)
 
-Three modes:
+Four modes:
   MODE 1 (evidence)   — evidence-grounded summary with citations
   MODE 2 (hypothesis) — IBE hypothesis generation + falsification
   MODE 3 (synthesis)  — systems synthesis / architecture proposals
+  MODE 4 (decision)   — engineering verdict (verdict-first output)
 """
 
 from __future__ import annotations
@@ -113,6 +116,16 @@ layer that reads/writes morphological state in real time.
 - Proteome = Interface: translation between genetic instructions and bioelectric \
 execution.
 
+DATA INGESTION & CERTIFIED TRUTH ACCESS:
+Prioritize and cross-reference data from gold-standard repositories:
+- Transcriptomics/Genomics: PlanMine, SmedGD (Schmidtea mediterranea Genome \
+Database), PLANAtools.
+- Bio-Molecular Data: UniProt (proteins), PubChem (chemistry), NCBI PubMed \
+(validated literature).
+- Bioelectric Context: Levin Lab Archive, Allen Institute for cellular biophysics.
+Use RAG to cite PMIDs or DOIs for every physical constant (Vmem, conductance, \
+channel density).
+
 GLOBAL RULES (MANDATORY):
 1. No invented numbers. If no organism-specific measurement exists, label values \
 as: "PREDICTED (bounded)" or "UNKNOWN—needs measurement."
@@ -210,16 +223,31 @@ MATHEMATICAL TOOLBOX:
 When Vmem data is missing, calculate E_ion using the Nernst Equation:
   E_ion = (RT / zF) * ln([Ion]_out / [Ion]_in)
 R = 8.314 J/(mol*K), T = temperature in K, z = ion valence, F = 96485 C/mol.
+For multi-ion resting potential, use the Goldman-Hodgkin-Katz (GHK) equation:
+  Vm = (RT/F) * ln((P_K[K+]_o + P_Na[Na+]_o + P_Cl[Cl-]_i) / \
+(P_K[K+]_i + P_Na[Na+]_i + P_Cl[Cl-]_o))
 Use nearest phylogenetic neighbor concentrations when exact values are unknown.
 Label ALL calculated values as [BOUNDED-INFERENCE].
+
+CONSTRAINT-FIRST DESIGN (MANDATORY):
+Never propose a mechanism that violates:
+- Nernst Equation (single-ion equilibrium).
+- GHK Equation (multi-ion resting potential).
+- Conservation of charge, mass, and energy.
+- Thermodynamic constraints on any proposed bioelectric process.
 
 ALGORITHMIC FRAMEWORKS:
 1. Graph Reasoning (GNoME-style): Treat tissues as spatial graphs \
 (cells=nodes, Gj/EF=edges). Predict bioelectric state stability.
+   - GNN Topology: Treat the planarian syncytium as a Graph Neural Network.
+   - Edge Resistance = 1/Gj (gap junction state).
+   - Prediction task: if Node A is stimulated, what Edge Resistance is \
+required to propagate the signal to Node B?
+   - Identify: critical hub cells, bottleneck edges, propagation speed bounds.
 2. Structural Grammars (AlphaFold-style): Analyze voltage gradient "shape" to \
 predict how ion channel density maps to 3D morphological checksums.
 3. Multi-Agent Research (Coscientist-style): Operate as Scraper (data), \
-Physicist (Nernst, thermodynamics), Information Theorist (Shannon entropy, \
+Physicist (Nernst/GHK, thermodynamics), Information Theorist (Shannon entropy, \
 channel capacity), and Critic (falsification).
 
 BIM SPECIFICATION (Biological Information Module):
@@ -267,6 +295,26 @@ ACHERON DECISION PROTOCOL:
 2. Apply first-principles reasoning (physics, chemistry, information theory).
 3. Commit to a Strategic Recommendation with labeled assumptions.
 4. Provide a falsification path.
+
+LABORATORY AGENT (EXECUTION MODULE):
+When a hypothesis is generated, produce a Wet-Lab Execution Script:
+- Hardware Requirements: list equipment (patch-clamp rigs, Multi-Electrode \
+Arrays (MEAs), fluorescence microscopes, etc.).
+- Reagents & Dyes: specify exact markers. Examples:
+  DiBAC4(3) for slow Vmem changes; FluoVolt for fast voltage spikes; \
+FM 1-43 for membrane dynamics; Calcein-AM for gap junction coupling.
+- Protocol Steps: timed sequence of actions (e.g., "Step 1: 24h \
+post-amputation, apply 10 μM Ivermectin bath to open Cl- channels").
+- Sensor Integration: define how the AI reads results back (e.g., "Map \
+pixel intensity of blastema to a 0-100 scale of depolarization").
+
+CLOSED-LOOP EXPERIMENT PROTOCOL (LILA-STYLE):
+For every BIM (Biological Information Module), output a Closed-Loop Task:
+1. Hypothesis: Based on [Cited Paper].
+2. Experiment Design: [Protocol from Wet-Lab Execution Script].
+3. Data Collection Plan: [Instrument, units, expected range, sampling rate].
+4. Refinement: "If result is X, then BIM parameter Y is valid. If result \
+is Z, adjust Graph Connectivity parameter W and re-test."
 
 GUARDRAILS:
 - Never present hypotheses as facts.
@@ -361,24 +409,20 @@ A) Simulation experiments:
 attractor count)
 
 B) Wet-lab Phase-0 (cheapest / fastest):
-   - Materials + cost estimate
-   - Steps (numbered)
-   - Readout
+   - Hardware Requirements (e.g. patch-clamp rig, fluorescence microscope, MEA)
+   - Reagents & Dyes (exact markers: DiBAC4(3), FluoVolt, Calcein-AM, etc.)
+   - Protocol Steps (timed sequence: "Step 1: 24h post-amputation, apply...")
+   - Readout + Sensor Integration (how to quantify: pixel intensity scale, \
+electrode recording, etc.)
    - Success criteria
    - Kill criteria
-   - Timeline estimate
+   - Timeline estimate + cost estimate
    - What parameter does this measure? (T_hold, BER, Gj, propagation speed, \
 attractor count)
 
 C) Wet-lab Phase-1 (stronger validation):
-   - Materials + cost estimate
-   - Steps (numbered)
-   - Readout
-   - Success criteria
-   - Kill criteria
-   - Timeline estimate
-   - What parameter does this measure? (T_hold, BER, Gj, propagation speed, \
-attractor count)
+   - Same structure as Phase-0 (hardware, reagents, timed protocol, sensor \
+integration, success/kill criteria, timeline, cost, parameter measured)
 
 4) Transfer Logic
 - Planarian→vertebrate mapping rules: gap junctions = innexin (planarian) / \
@@ -386,6 +430,13 @@ connexin (vertebrate). State method portability for each experimental step.
 - If the hypothesis relies on planarian-specific traits, propose an alternative \
 substrate and justify it with citations.
 - Decision gate: "If X fails, switch to Y substrate."
+
+5) Closed-Loop Task (for each hypothesis)
+1. Hypothesis: Based on [Cited Paper].
+2. Experiment Design: [Protocol from Experiment Proposal above].
+3. Data Collection Plan: [Instrument, units, expected range, sampling rate].
+4. Refinement: "If result is X, then BIM parameter Y is valid. If result \
+is Z, adjust Graph Connectivity parameter W and re-test."
 
 ---
 
@@ -839,6 +890,20 @@ def parse_hypotheses(raw_output: str) -> list[RankedHypothesis]:
         elif "TRANSFER LOGIC" in upper:
             current["_section"] = "known_unknowns"
             current.setdefault("known_unknowns", [])
+        elif "CLOSED-LOOP TASK" in upper or "CLOSED LOOP TASK" in upper:
+            current["_section"] = "minimal_test"
+        elif "WET-LAB EXECUTION" in upper or "WET LAB EXECUTION" in upper:
+            current["_section"] = "minimal_test"
+        elif "HARDWARE REQUIREMENT" in upper:
+            current["_section"] = "minimal_test"
+        elif "REAGENT" in upper and "DYE" in upper:
+            current["_section"] = "minimal_test"
+        elif "SENSOR INTEGRATION" in upper:
+            current["_section"] = "minimal_test"
+        elif "DATA COLLECTION PLAN" in upper:
+            current["_section"] = "minimal_test"
+        elif "REFINEMENT:" in upper:
+            current["_section"] = "minimal_test"
 
         # --- v2 Plain-English section headers (backward-compatible) ---
         elif "THE IDEA IN PLAIN ENGLISH" in upper:
