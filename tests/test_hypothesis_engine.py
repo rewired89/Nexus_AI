@@ -1,7 +1,7 @@
 """Tests for the Evidence-Bound Hypothesis Engine.
 
 Tests mode detection, evidence graph parsing, hypothesis parsing (IBE),
-next query extraction, and uncertainty parsing — all offline.
+next query extraction, uncertainty parsing, and decision mode — all offline.
 """
 
 from acheron.models import ClaimStatus, NexusMode
@@ -14,6 +14,8 @@ from acheron.rag.hypothesis_engine import (
     parse_next_queries,
     parse_overall_confidence,
     parse_uncertainty_notes,
+    parse_verdict,
+    validate_decision_output,
 )
 
 
@@ -336,3 +338,166 @@ NEXT_QUERIES
     assert result.confidence == 60
     assert result.live_sources_fetched == 5
     assert len(result.next_queries) >= 1
+
+
+# ======================================================================
+# Decision mode detection tests
+# ======================================================================
+def test_detect_mode_decision_triggers():
+    assert detect_mode("Should I use planarian substrate?") == NexusMode.DECISION
+    assert detect_mode("Is this viable for bioelectric memory?") == NexusMode.DECISION
+    assert detect_mode("Is it feasible to store data in Vmem?") == NexusMode.DECISION
+    assert detect_mode("Give me a yes or no verdict") == NexusMode.DECISION
+    assert detect_mode("Can this work with innexin channels?") == NexusMode.DECISION
+    assert detect_mode("Go/no-go on planarian biocomputation") == NexusMode.DECISION
+    assert detect_mode("Should we switch substrate to Xenopus?") == NexusMode.DECISION
+
+
+def test_detect_mode_decision_explicit():
+    assert detect_mode("What is Vmem?", explicit_mode="decision") == NexusMode.DECISION
+    result = detect_mode("Why do planaria regenerate?", explicit_mode="decision")
+    assert result == NexusMode.DECISION
+
+
+def test_detect_mode_decision_priority_over_hypothesis():
+    """Decision triggers should take priority over hypothesis triggers."""
+    # "should I" is decision, even though "what if" might match hypothesis
+    assert detect_mode("Should I hypothesize about Vmem?") == NexusMode.DECISION
+
+
+def test_get_mode_prompt_decision():
+    prompt = get_mode_prompt(NexusMode.DECISION)
+    assert "VERDICT" in prompt
+    assert "MODE 4" in prompt or "ENGINEERING VERDICT" in prompt
+    # Should be distinct from other modes
+    assert prompt != get_mode_prompt(NexusMode.EVIDENCE)
+    assert prompt != get_mode_prompt(NexusMode.HYPOTHESIS)
+    assert prompt != get_mode_prompt(NexusMode.SYNTHESIS)
+
+
+# ======================================================================
+# Verdict parsing tests
+# ======================================================================
+SAMPLE_DECISION_OUTPUT = """\
+VERDICT: YES — planarian bioelectric memory is viable for Phase-0 testing.
+
+CONFIDENCE: 68 — sufficient evidence from Levin lab studies on Vmem-encoded \
+anterior-posterior polarity, though planarian-specific T_hold is unmeasured.
+
+RATIONALE:
+Multiple independent studies demonstrate that Vmem gradients in planaria encode \
+positional information that persists through regeneration [EVIDENCE] [1]. \
+Gap junction (innexin) connectivity patterns survive decapitation and guide \
+head-vs-tail fate decisions [EVIDENCE] [2]. The BIGR framework maps \
+naturally: innexin connectivity = SSD (non-volatile), Vmem gradient = RAM \
+(volatile read/write) [INFERENCE]. However, T_hold and BER remain unmeasured \
+for planarian gap junctions specifically [DATA GAP].
+
+KEY EVIDENCE:
+- Vmem gradients encode anterior-posterior polarity in planaria [EVIDENCE] [1]
+- Innexin-6 knockout produces two-headed phenotype [EVIDENCE] [2]
+- Gap junction connectivity survives regeneration cycles [EVIDENCE] [3]
+
+KEY UNKNOWNS:
+- T_hold for planarian Vmem states (requires patch clamp)
+- BER for innexin-mediated signaling (requires single-channel recording)
+
+ACTION:
+Run a Phase-0 voltage-sensitive dye (DiBAC) imaging experiment on \
+amputated planaria to establish baseline Vmem maps. Cost: ~$200. Timeline: 1 week.
+
+KILL CRITERIA:
+If patch-clamp measurement yields T_hold < 100 ms, abandon planarian Vmem \
+as information storage substrate and pivot to innexin connectivity (SSD-analog).
+
+PIVOT:
+If planarian Vmem proves too volatile, switch to Physarum polycephalum \
+tube-network conductance as the storage substrate — demonstrated stable \
+memory traces over 24+ hours [3].
+"""
+
+
+def test_parse_verdict_yes():
+    verdict, rationale = parse_verdict(SAMPLE_DECISION_OUTPUT)
+    assert verdict == "YES"
+    assert "planarian" in rationale.lower() or len(rationale) > 0
+
+
+def test_parse_verdict_no():
+    text = "VERDICT: NO — insufficient evidence for bioelectric data storage."
+    verdict, rationale = parse_verdict(text)
+    assert verdict == "NO"
+
+
+def test_parse_verdict_conditional():
+    text = "VERDICT: CONDITIONAL — viable if T_hold > 500 ms."
+    verdict, rationale = parse_verdict(text)
+    assert verdict == "CONDITIONAL"
+
+
+def test_parse_verdict_missing():
+    verdict, rationale = parse_verdict("No verdict here, just a report.")
+    assert verdict == ""
+    assert rationale == ""
+
+
+def test_validate_decision_output_good():
+    warnings = validate_decision_output(SAMPLE_DECISION_OUTPUT)
+    assert len(warnings) == 0
+
+
+def test_validate_decision_output_no_verdict():
+    bad_output = "Evidence Extracted\n- Some fact [EVIDENCE]\nHypothesis\n..."
+    warnings = validate_decision_output(bad_output)
+    assert any("VERDICT" in w for w in warnings)
+
+
+def test_validate_decision_output_no_kill_criteria():
+    output = "VERDICT: YES\nSome rationale."
+    warnings = validate_decision_output(output)
+    assert any("KILL CRITERIA" in w for w in warnings)
+
+
+def test_build_engine_result_decision_mode():
+    result = build_engine_result(
+        raw_output=SAMPLE_DECISION_OUTPUT,
+        query="Should I use planarian substrate?",
+        mode=NexusMode.DECISION,
+        sources=[],
+        total_searched=10,
+        model_used="test-model",
+    )
+    assert result.mode == NexusMode.DECISION
+    # Good decision output should have no validation warnings
+    validation_warnings = [
+        n for n in result.uncertainty_notes if n.startswith("[VALIDATION]")
+    ]
+    assert len(validation_warnings) == 0
+
+
+def test_build_engine_result_decision_mode_bad_output():
+    """Decision mode with report-style output should produce validation warnings."""
+    report_output = """\
+EVIDENCE EXTRACTED
+- Vmem gradients encode polarity [EVIDENCE] [1]
+
+HYPOTHESIS
+Vmem gradients store positional memory...
+
+UNCERTAINTY
+- T_hold is unknown
+"""
+    result = build_engine_result(
+        raw_output=report_output,
+        query="Should I use planarian substrate?",
+        mode=NexusMode.DECISION,
+        sources=[],
+        total_searched=10,
+        model_used="test-model",
+    )
+    assert result.mode == NexusMode.DECISION
+    validation_warnings = [
+        n for n in result.uncertainty_notes if n.startswith("[VALIDATION]")
+    ]
+    # Should have at least a warning about missing VERDICT
+    assert len(validation_warnings) >= 1

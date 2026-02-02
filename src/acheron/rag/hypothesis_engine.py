@@ -37,6 +37,17 @@ logger = logging.getLogger(__name__)
 # Mode detection
 # ======================================================================
 
+_DECISION_TRIGGERS = [
+    "should i", "should we", "is this viable", "is it viable",
+    "is this feasible", "is it feasible", "yes or no",
+    "go/no-go", "go or no-go", "go no-go",
+    "can this work", "can it work", "will this work", "will it work",
+    "verdict", "decide", "viable?", "feasible?",
+    "switch substrate", "abandon", "give up on",
+    "is it possible to", "is this possible",
+    "can we use", "should this be",
+]
+
 _HYPOTHESIS_TRIGGERS = [
     "theor", "hypothes", "hypothesize", "what could",
     "what might", "why does", "why do", "why would",
@@ -54,11 +65,15 @@ _SYNTHESIS_TRIGGERS = [
 def detect_mode(query: str, explicit_mode: Optional[str] = None) -> NexusMode:
     """Detect the operating mode from query text or explicit parameter.
 
-    Trigger rules:
+    Trigger rules (priority order):
     - Explicit mode always wins.
-    - If query contains hypothesis/theory language → MODE 2
-    - If query contains design/protocol language → MODE 3
+    - If query asks for a verdict/decision → MODE 4 (decision)
+    - If query contains design/protocol language → MODE 3 (synthesis)
+    - If query contains hypothesis/theory language → MODE 2 (hypothesis)
     - Otherwise → MODE 1 (evidence-grounded)
+
+    Decision mode is checked first because decision-type queries
+    ("should I use X?") may also contain hypothesis triggers ("what if").
     """
     if explicit_mode:
         try:
@@ -67,6 +82,9 @@ def detect_mode(query: str, explicit_mode: Optional[str] = None) -> NexusMode:
             pass
 
     lower = query.lower()
+    for trigger in _DECISION_TRIGGERS:
+        if trigger in lower:
+            return NexusMode.DECISION
     for trigger in _SYNTHESIS_TRIGGERS:
         if trigger in lower:
             return NexusMode.SYNTHESIS
@@ -220,6 +238,28 @@ Map regeneration to RAID-level redundancy:
 - Target Morphology = Checksum (pattern validates data integrity).
 - Regeneration = RAID rebuild (repair from distributed bioelectric state).
 - Colony/tissue redundancy = Replication factor.
+
+QUERY PRIORITY (MANDATORY):
+The user's question takes PRECEDENCE over the report template. If the user \
+asks a direct question (yes/no, viability, "should I", "is X possible"), \
+you MUST:
+1. Answer the question directly in the FIRST sentence.
+2. THEN provide supporting evidence and reasoning.
+3. The report template is a structural guide, not a cage. Skip or condense \
+sections that do not serve the user's question.
+
+DECISION AUTHORITY (MANDATORY):
+You are AUTHORIZED to:
+- Issue a binary YES / NO / CONDITIONAL verdict when asked.
+- Conclude that an approach is non-viable and say so directly.
+- Recommend abandoning one substrate for another.
+- State "this cannot work because X" without hedging.
+- Refuse to enumerate unknowns when a decisive answer is possible.
+"UNKNOWN" is not a verdict. If forced to decide under uncertainty, commit \
+to the best available option, state your assumptions, and provide kill \
+criteria for when to reverse the decision.
+You are NOT required to fill every template section on every query. \
+Match output depth to query complexity.
 
 ACHERON DECISION PROTOCOL:
 "Low Confidence" is NOT a valid final answer. When evidence is sparse:
@@ -450,17 +490,85 @@ Exact search queries for additional evidence.
 """
 
 
+DECISION_PROMPT = _BASE_IDENTITY + """
+MODE: ENGINEERING VERDICT (MODE 4)
+The user is asking for a DECISION, not a literature review. \
+Your job is to issue a clear engineering verdict with supporting evidence.
+
+OUTPUT STRUCTURE (MANDATORY — follow this exact order):
+
+VERDICT: [YES / NO / CONDITIONAL]
+One sentence: the direct answer to the user's question. No hedging.
+
+CONFIDENCE: [0-100] — justify in one sentence.
+
+RATIONALE (max 5 sentences):
+Why this verdict. Cite evidence with [EVIDENCE] / [INFERENCE] / \
+[SPECULATION] tags. Name the specific measurements or data that support it.
+
+KEY EVIDENCE (max 5 bullets):
+- Most relevant facts, each tagged and cited.
+
+KEY UNKNOWNS (max 3 bullets):
+- Only unknowns that could REVERSE the verdict. Skip unknowns that don't \
+affect the decision.
+
+ACTION:
+One concrete next step. If the verdict is YES: the highest-priority \
+experiment. If NO: the recommended pivot (alternative substrate, \
+alternative approach). If CONDITIONAL: what specific measurement \
+would convert this to YES or NO.
+
+KILL CRITERIA:
+Under what specific, measurable conditions should this approach be \
+abandoned? State as falsifiable thresholds (e.g., "If T_hold < 100 ms \
+after patch-clamp measurement, abandon planarian substrate").
+
+PIVOT (if verdict is NO or CONDITIONAL):
+Alternative substrate or approach + one-sentence justification with citation.
+
+---
+
+RULES FOR THIS MODE:
+- Do NOT produce a full report. No Evidence Extracted section. No \
+multi-hypothesis enumeration. No BIM Specification unless directly \
+relevant to the verdict.
+- If the answer is obviously YES or NO from the evidence, say so in \
+one sentence. Do not pad with uncertainty.
+- "UNKNOWN" is NOT a verdict. You must commit to YES, NO, or CONDITIONAL.
+- CONDITIONAL means: "Yes if X is true; No if X is false. Here is how \
+to measure X."
+- Every sentence must serve the verdict. Delete anything that doesn't.
+"""
+
+
 def get_mode_prompt(mode: NexusMode) -> str:
     """Return the system prompt for the given mode."""
     if mode == NexusMode.HYPOTHESIS:
         return HYPOTHESIS_PROMPT
     elif mode == NexusMode.SYNTHESIS:
         return SYNTHESIS_PROMPT
+    elif mode == NexusMode.DECISION:
+        return DECISION_PROMPT
     return EVIDENCE_PROMPT
 
 
 def get_mode_query_template(mode: NexusMode) -> str:
     """Return the query template for the given mode."""
+    if mode == NexusMode.DECISION:
+        return """\
+Retrieved source passages from the bioelectricity and biomedical research corpus:
+
+=== SOURCE PASSAGES ===
+{context}
+========================
+
+Decision query: {query}
+
+Issue a VERDICT first. Follow the exact output structure from your system \
+prompt (VERDICT → CONFIDENCE → RATIONALE → KEY EVIDENCE → KEY UNKNOWNS → \
+ACTION → KILL CRITERIA → PIVOT). Do NOT produce a full report. \
+Every claim must trace to a source number."""
     return """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
 
@@ -1014,6 +1122,58 @@ def parse_uncertainty_notes(raw_output: str) -> list[str]:
     return notes
 
 
+def parse_verdict(raw_output: str) -> tuple[str, str]:
+    """Extract VERDICT line from decision-mode output.
+
+    Returns (verdict, rationale) where verdict is YES/NO/CONDITIONAL
+    and rationale is the text following the verdict keyword.
+    If no verdict found, returns ("", "").
+    """
+    for line in raw_output.split("\n"):
+        stripped = line.strip()
+        upper = stripped.upper()
+        if upper.startswith("VERDICT:"):
+            body = stripped.split(":", 1)[1].strip()
+            # Extract the keyword
+            for keyword in ("YES", "NO", "CONDITIONAL"):
+                if keyword in body.upper():
+                    # Rationale is the rest after the keyword
+                    idx = body.upper().index(keyword) + len(keyword)
+                    rationale = body[idx:].lstrip(" .,—-:").strip()
+                    return keyword, rationale
+            # Verdict line exists but no recognized keyword
+            return body, ""
+    return "", ""
+
+
+def validate_decision_output(raw_output: str) -> list[str]:
+    """Validate that decision-mode output contains a proper verdict.
+
+    Returns a list of warnings (empty if output passes validation).
+    """
+    warnings: list[str] = []
+    verdict, _ = parse_verdict(raw_output)
+    if not verdict:
+        warnings.append(
+            "[VALIDATION] Decision mode was requested but no VERDICT: line "
+            "was found in the output. The model may have fallen back to "
+            "report-template behavior."
+        )
+    elif verdict not in ("YES", "NO", "CONDITIONAL"):
+        warnings.append(
+            f"[VALIDATION] VERDICT value '{verdict}' is not one of "
+            "YES / NO / CONDITIONAL."
+        )
+
+    upper = raw_output.upper()
+    if "KILL CRITERIA" not in upper:
+        warnings.append(
+            "[VALIDATION] No KILL CRITERIA section found. Decision output "
+            "should specify when to abandon the approach."
+        )
+    return warnings
+
+
 def build_engine_result(
     raw_output: str,
     query: str,
@@ -1039,6 +1199,15 @@ def build_engine_result(
     next_queries = parse_next_queries(raw_output)
     confidence, justification = parse_overall_confidence(raw_output)
     uncertainty = parse_uncertainty_notes(raw_output)
+
+    # Decision-mode output validation
+    if mode == NexusMode.DECISION:
+        validation_warnings = validate_decision_output(raw_output)
+        if validation_warnings:
+            uncertainty = validation_warnings + uncertainty
+            logger.warning(
+                "Decision output validation: %s", "; ".join(validation_warnings)
+            )
 
     return HypothesisEngineResult(
         query=query,
