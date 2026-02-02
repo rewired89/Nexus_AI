@@ -224,15 +224,18 @@ Citation format: Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID
 
 1) Evidence Extracted
 - Bullet list of facts directly supported by citations. Tag each [EVIDENCE].
+- Bullet list of inferences constrained by physics or theory. Tag each [INFERENCE].
+- Bullet list of speculative claims beyond current evidence. Tag each [SPECULATION].
 - Bullet list of facts supported by simulations. Tag each [SIMULATION].
 - Cite with full format. If abstract only: [ABSTRACT-ONLY]. If preprint: [PREPRINT].
 - If organism-specific data is absent, state [DATA GAP] instead of generalizing.
 
 2) Hypothesis (max 3)
 For EACH hypothesis:
-- One paragraph: falsifiable, formal scientific language. Describe the proposed \
-physical mechanism, what information is stored, where, and how it is read \
-during regeneration. Tagged [SPECULATION].
+- One falsifiable paragraph with measurable observables (mV ranges, time \
+constants, success thresholds). Formal scientific language. Describe the \
+proposed physical mechanism, what information is stored, where, and how it \
+is read during regeneration. Tagged [SPECULATION].
 - This hypothesis is based on:
   * Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID [1]
   * (repeat for all sources used)
@@ -242,12 +245,17 @@ SIMULATION-DERIVED, BOUNDED-INFERENCE, or UNKNOWN.
 3) Experiment Proposal
 For EACH hypothesis:
 A) Simulation: model type, parameters swept, expected outputs, falsification \
-criteria. State what parameter is measured (e.g. T_hold, BER, Gj).
+criteria. State what parameter is measured (T_hold, BER, Gj, propagation \
+speed, attractor count).
 B) Wet-lab Phase-0 (cheapest): materials, steps, readout, success criteria, \
-kill criteria, timeline, cost estimate, parameter measured.
-C) Wet-lab Phase-1 (stronger): same structure as Phase-0.
+kill criteria, timeline, cost estimate. State what parameter is measured \
+(T_hold, BER, Gj, propagation speed, attractor count).
+C) Wet-lab Phase-1 (stronger): same structure as Phase-0. State what \
+parameter is measured (T_hold, BER, Gj, propagation speed, attractor count).
 
 4) Transfer Logic
+- Planarian→vertebrate mapping rules: gap junctions = innexin (planarian) / \
+connexin (vertebrate). State method portability for each experimental step.
 - If the hypothesis relies on planarian-specific traits, propose an alternative \
 substrate and justify with citations.
 - Decision gate: "If X fails, switch to Y substrate."
@@ -314,9 +322,10 @@ Rate each as Low/Medium/High based on sources. If no data, state "No data".
 
 6. HYPOTHESES
 Generate testable hypotheses from the patterns. For EACH hypothesis:
-- Hypothesis: one falsifiable paragraph in formal scientific language. \
-Describe the proposed mechanism, what information is stored, where, \
-how it is read during regeneration.
+- Hypothesis: one falsifiable paragraph with measurable observables \
+(mV ranges, time constants, success thresholds). Formal scientific \
+language. Describe the proposed mechanism, what information is stored, \
+where, how it is read during regeneration.
 - This hypothesis is based on:
   * Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID [n]
   * (repeat for all sources used)
@@ -326,12 +335,17 @@ SIMULATION-DERIVED, BOUNDED-INFERENCE, or UNKNOWN.
 7. EXPERIMENT PROPOSAL
 For EACH hypothesis:
 A) Simulation: model type, parameters swept, expected outputs, falsification \
-criteria. State what parameter is measured (e.g. T_hold, BER, Gj).
+criteria. State what parameter is measured (T_hold, BER, Gj, propagation \
+speed, attractor count).
 B) Wet-lab Phase-0 (cheapest): materials, steps, readout, success criteria, \
-kill criteria, timeline, cost estimate, parameter measured.
-C) Wet-lab Phase-1 (stronger): same structure as Phase-0.
+kill criteria, timeline, cost estimate. State what parameter is measured \
+(T_hold, BER, Gj, propagation speed, attractor count).
+C) Wet-lab Phase-1 (stronger): same structure as Phase-0. State what \
+parameter is measured (T_hold, BER, Gj, propagation speed, attractor count).
 
 8. TRANSFER LOGIC
+- Planarian→vertebrate mapping rules: gap junctions = innexin (planarian) / \
+connexin (vertebrate). State method portability for each experimental step.
 - If the hypothesis relies on planarian-specific traits, propose an alternative \
 substrate and justify with citations.
 - Decision gate: "If X fails, switch to Y substrate."

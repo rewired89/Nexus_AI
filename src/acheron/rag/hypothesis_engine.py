@@ -284,16 +284,19 @@ OUTPUT SECTIONS (use exact headings):
 
 1) Evidence Extracted
 - Bullet list of facts directly supported by citations. Tag each [EVIDENCE].
+- Bullet list of inferences constrained by physics or theory. Tag each [INFERENCE].
+- Bullet list of speculative claims beyond current evidence. Tag each [SPECULATION].
 - Bullet list of facts supported by simulations. Tag each [SIMULATION].
 - Citation format: Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID.
 - If using abstract only, mark [ABSTRACT-ONLY].
 - If using preprints, mark [PREPRINT].
 
 2) Hypothesis
-One paragraph per hypothesis: falsifiable, with measurable observables. \
-Written in formal scientific language. Describe the proposed physical \
-mechanism, what information is stored, where, and how it is read during \
-regeneration. Generate at least 2 alternative hypotheses plus a leading one.
+One falsifiable hypothesis per paragraph with measurable observables \
+(mV ranges, time constants, success thresholds). Written in formal \
+scientific language. Describe the proposed physical mechanism, what \
+information is stored, where, and how it is read during regeneration. \
+Generate at least 2 alternative hypotheses plus a leading one.
 
 This hypothesis is based on:
 - Title — Site/Journal — Author(s) — Year — URL/DOI/PMCID [1]
@@ -314,7 +317,8 @@ or UNKNOWN.)
 A) Simulation experiments:
    - Model type (inputs, parameters swept, expected outputs)
    - Falsification criteria
-   - What parameter does this measure? (e.g. T_hold, BER, Gj, propagation speed)
+   - What parameter does this measure? (T_hold, BER, Gj, propagation speed, \
+attractor count)
 
 B) Wet-lab Phase-0 (cheapest / fastest):
    - Materials + cost estimate
@@ -323,7 +327,8 @@ B) Wet-lab Phase-0 (cheapest / fastest):
    - Success criteria
    - Kill criteria
    - Timeline estimate
-   - What parameter does this measure?
+   - What parameter does this measure? (T_hold, BER, Gj, propagation speed, \
+attractor count)
 
 C) Wet-lab Phase-1 (stronger validation):
    - Materials + cost estimate
@@ -332,9 +337,12 @@ C) Wet-lab Phase-1 (stronger validation):
    - Success criteria
    - Kill criteria
    - Timeline estimate
-   - What parameter does this measure?
+   - What parameter does this measure? (T_hold, BER, Gj, propagation speed, \
+attractor count)
 
 4) Transfer Logic
+- Planarian→vertebrate mapping rules: gap junctions = innexin (planarian) / \
+connexin (vertebrate). State method portability for each experimental step.
 - If the hypothesis relies on planarian-specific traits, propose an alternative \
 substrate and justify it with citations.
 - Decision gate: "If X fails, switch to Y substrate."
@@ -377,10 +385,14 @@ CLAIM RELATIONSHIPS
 HYPOTHESES
 Generate testable hypotheses underlying the proposed design.
 Use the same format as MODE 2: "Evidence Extracted" (tagged [EVIDENCE] / \
-[SIMULATION]), "Hypothesis" (formal scientific paragraph + citations), \
-"Predicted observables" (labeled MEASURED/PREDICTED/SIMULATION-DERIVED/\
-BOUNDED-INFERENCE/UNKNOWN), "Experiment Proposal" (A: Simulation, B: \
-Phase-0, C: Phase-1), "Transfer Logic" (alternative substrate + decision gate).
+[INFERENCE] / [SPECULATION] / [SIMULATION]), "Hypothesis" (falsifiable \
+paragraph with measurable observables — mV ranges, time constants, success \
+thresholds — plus citations), "Predicted observables" (labeled MEASURED/\
+PREDICTED/SIMULATION-DERIVED/BOUNDED-INFERENCE/UNKNOWN), "Experiment \
+Proposal" (A: Simulation, B: Phase-0, C: Phase-1; each names the target \
+parameter from T_hold, BER, Gj, propagation speed, attractor count), \
+"Transfer Logic" (planarian→vertebrate mapping rules with innexin/connexin \
+equivalence, method portability, decision gate).
 
 SYSTEM DESIGN
 Describe the proposed architecture/protocol/system with explicit labels for:
