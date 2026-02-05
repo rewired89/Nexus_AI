@@ -44,6 +44,7 @@ class NexusMode(str, Enum):
     HYPOTHESIS = "hypothesis"  # MODE 2: IBE hypothesis generation
     SYNTHESIS = "synthesis"  # MODE 3: systems synthesis / design
     DECISION = "decision"  # MODE 4: engineering verdict (verdict-first)
+    TUTOR = "tutor"  # MODE 5: educational explanation with glossary/analogies
 
 
 # ======================================================================

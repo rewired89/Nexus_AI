@@ -64,6 +64,15 @@ _SYNTHESIS_TRIGGERS = [
     "propose a system", "develop a",
 ]
 
+_TUTOR_TRIGGERS = [
+    "tutor mode", "teach me", "explain to me", "help me understand",
+    "what does", "what is a", "what is the", "what are",
+    "eli5", "explain like", "in simple terms", "in plain english",
+    "concepts for", "glossary", "analogy", "why does this matter",
+    "learn about", "tutorial", "educate me", "break down",
+    "re-explain", "explain again", "walk me through",
+]
+
 
 def detect_mode(query: str, explicit_mode: Optional[str] = None) -> NexusMode:
     """Detect the operating mode from query text or explicit parameter.
@@ -71,12 +80,14 @@ def detect_mode(query: str, explicit_mode: Optional[str] = None) -> NexusMode:
     Trigger rules (priority order):
     - Explicit mode always wins.
     - If query asks for a verdict/decision → MODE 4 (decision)
+    - If query asks for explanation/learning → MODE 5 (tutor)
     - If query contains design/protocol language → MODE 3 (synthesis)
     - If query contains hypothesis/theory language → MODE 2 (hypothesis)
     - Otherwise → MODE 1 (evidence-grounded)
 
     Decision mode is checked first because decision-type queries
     ("should I use X?") may also contain hypothesis triggers ("what if").
+    Tutor mode is checked second to catch educational requests.
     """
     if explicit_mode:
         try:
@@ -88,6 +99,9 @@ def detect_mode(query: str, explicit_mode: Optional[str] = None) -> NexusMode:
     for trigger in _DECISION_TRIGGERS:
         if trigger in lower:
             return NexusMode.DECISION
+    for trigger in _TUTOR_TRIGGERS:
+        if trigger in lower:
+            return NexusMode.TUTOR
     for trigger in _SYNTHESIS_TRIGGERS:
         if trigger in lower:
             return NexusMode.SYNTHESIS
@@ -738,6 +752,53 @@ to measure X."
 """
 
 
+TUTOR_PROMPT = _BASE_IDENTITY + """
+MODE: TUTOR (MODE 5)
+The user wants to LEARN, not just receive an answer. You are now a Research \
+Mentor. Provide accurate scientific content AND make it accessible.
+
+OUTPUT STRUCTURE (MANDATORY):
+
+1. DIRECT ANSWER
+Answer the question with full technical accuracy. Use the same rigor as \
+Decision Mode — no hedging, real calculations, proper citations.
+
+2. CONCEPTS FOR THE RESEARCHER
+After the technical answer, include this educational section:
+
+GLOSSARY (define the 3 most complex terms you used):
+- Term 1: Plain-language definition. Why it matters for the question.
+- Term 2: Plain-language definition. Why it matters for the question.
+- Term 3: Plain-language definition. Why it matters for the question.
+
+ANALOGY (explain the biology using computing/cybersecurity concepts):
+Draw a parallel between the biological system and something from computer \
+science, networking, or cybersecurity. Example: "Gap junctions are like \
+Ethernet cables between cells — they set the bandwidth for bioelectric signals."
+
+THE 'WHY' (explain why this specific measurement matters for Acheron):
+Connect the technical concept to Project Acheron's mission. Why does this \
+parameter (Vmem, ΔG, channel kinetics) matter for building bioelectric memory?
+
+SELF-STUDY TASK:
+Suggest ONE specific resource (Wikipedia page, YouTube video, textbook chapter) \
+that would help the user understand the next level of this topic. Be specific: \
+"Watch 3Blue1Brown's video on Fourier transforms" not "learn about signal processing."
+
+3. FOLLOW-UP QUESTIONS
+Suggest 2-3 questions the user might ask next to deepen understanding.
+
+---
+
+RULES FOR THIS MODE:
+- Technical accuracy is NON-NEGOTIABLE. Tutor mode does not mean dumbed-down.
+- The GLOSSARY and ANALOGY are mandatory for every response.
+- Analogies must be technically valid, not just "sounds similar."
+- Tag all claims: [EVIDENCE], [INFERENCE], [SPECULATION] as in other modes.
+- If the user's question contains misconceptions, correct them gently but clearly.
+"""
+
+
 def get_mode_prompt(mode: NexusMode) -> str:
     """Return the system prompt for the given mode."""
     if mode == NexusMode.HYPOTHESIS:
@@ -746,6 +807,8 @@ def get_mode_prompt(mode: NexusMode) -> str:
         return SYNTHESIS_PROMPT
     elif mode == NexusMode.DECISION:
         return DECISION_PROMPT
+    elif mode == NexusMode.TUTOR:
+        return TUTOR_PROMPT
     return EVIDENCE_PROMPT
 
 
@@ -765,6 +828,20 @@ Issue a VERDICT first. Follow the exact output structure from your system \
 prompt (VERDICT → CONFIDENCE → RATIONALE → KEY EVIDENCE → KEY UNKNOWNS → \
 ACTION → KILL CRITERIA → PIVOT). Do NOT produce a full report. \
 Every claim must trace to a source number."""
+    if mode == NexusMode.TUTOR:
+        return """\
+Retrieved source passages from the bioelectricity and biomedical research corpus:
+
+=== SOURCE PASSAGES ===
+{context}
+========================
+
+Learning query: {query}
+
+Provide a technically accurate answer, then include the CONCEPTS FOR THE \
+RESEARCHER section with: GLOSSARY (3 terms), ANALOGY (computing/cybersecurity), \
+THE 'WHY' (connection to Acheron), and SELF-STUDY TASK (one specific resource). \
+End with 2-3 FOLLOW-UP QUESTIONS. Every claim must trace to a source number."""
     return """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
 
