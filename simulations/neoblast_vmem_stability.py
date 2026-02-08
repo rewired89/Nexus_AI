@@ -14,6 +14,10 @@ Based on Nexus v1 Hardware Baselines:
 
 from brian2 import *
 import matplotlib.pyplot as plt
+from pathlib import Path
+
+# Get the directory where this script is located
+SCRIPT_DIR = Path(__file__).parent.resolve()
 
 # --- 1. PHYSICAL PARAMETERS (Nexus v1 Specifications) ---
 area = 20000 * umetre**2
@@ -72,7 +76,8 @@ plt.grid(True, alpha=0.3)
 plt.ylim(-70, -10)
 plt.xlim(0, 100)
 
-# Save the figure
-plt.savefig('/home/user/Acheron-Nexus/simulations/neoblast_vmem_stability.png', dpi=150, bbox_inches='tight')
-print(f"\nPlot saved to: /home/user/Acheron-Nexus/simulations/neoblast_vmem_stability.png")
+# Save the figure (cross-platform path)
+output_path = SCRIPT_DIR / 'neoblast_vmem_stability.png'
+plt.savefig(output_path, dpi=150, bbox_inches='tight')
+print(f"\nPlot saved to: {output_path}")
 plt.show()
