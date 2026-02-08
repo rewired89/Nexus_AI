@@ -770,10 +770,8 @@ class RAGPipeline:
                     total_chunks_searched=result.total_chunks_searched,
                     uncertainty_notes=result.uncertainty_notes,
                     detected_mode=detected_mode.value,
-                    raw_output=f"[AUTO-ROUTED TO {detected_mode.value.upper()} MODE]\n\n"
-                    f"Confidence: {result.confidence}/100\n"
-                    f"Justification: {result.confidence_justification}\n\n"
-                    + "\n".join(result.uncertainty_notes),
+                    # Use the actual LLM response, not just metadata
+                    raw_output=result.raw_output,
                 )
 
         n = n_results or self.n_retrieve

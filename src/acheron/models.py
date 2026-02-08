@@ -443,6 +443,8 @@ class HypothesisEngineResult(BaseModel):
     model_used: str = ""
     total_chunks_searched: int = 0
     live_sources_fetched: int = 0
+    # Raw LLM output - especially important for Decision/Calculation mode
+    raw_output: str = Field(default="", description="Raw LLM response text")
 
 
 # Forward-reference resolution

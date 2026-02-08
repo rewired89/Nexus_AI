@@ -79,6 +79,9 @@ class DiscoverResponse(BaseModel):
     sources: list[dict]
     model_used: str
     total_chunks_searched: int
+    # New fields for auto-routed Decision/Calculation answers
+    raw_output: str = ""
+    detected_mode: str = "discovery"
 
 
 class StatsResponse(BaseModel):
@@ -238,6 +241,9 @@ async def api_discover(req: QueryRequest):
         ],
         model_used=result.model_used,
         total_chunks_searched=result.total_chunks_searched,
+        # Include the actual answer for auto-routed queries
+        raw_output=getattr(result, 'raw_output', ''),
+        detected_mode=getattr(result, 'detected_mode', 'discovery'),
     )
 
 

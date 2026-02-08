@@ -1695,4 +1695,5 @@ def build_engine_result(
         model_used=model_used,
         total_chunks_searched=total_searched,
         live_sources_fetched=live_sources_fetched,
+        raw_output=raw_output,  # Preserve the full LLM response
     )
