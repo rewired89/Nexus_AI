@@ -712,6 +712,7 @@ class RAGPipeline:
         question: str,
         filter_source: Optional[str] = None,
         n_results: Optional[int] = None,
+        auto_route: bool = True,
     ) -> DiscoveryResult:
         """Execute the full discovery loop.
 
@@ -721,8 +722,59 @@ class RAGPipeline:
         C. Score and filter evidence (organism match, primary data, etc.)
         D. Generate structured output with claim extraction
         E. Synthesize: evidence, data gaps, hypotheses, collection queries
+
+        If auto_route=True (default), queries that are better suited for
+        Decision or Tutor mode will be automatically routed to analyze().
         """
+        from acheron.models import NexusMode
+        from acheron.rag.hypothesis_engine import detect_mode
         from acheron.rag.query_parser import generate_collection_queries, parse_query
+
+        # Smart routing: detect if this query needs a tighter mode
+        if auto_route:
+            detected_mode = detect_mode(question)
+            if detected_mode in (NexusMode.DECISION, NexusMode.TUTOR):
+                logger.info(
+                    "Auto-routing to %s mode (detected from query)",
+                    detected_mode.value,
+                )
+                # Route to analyze() which handles these modes properly
+                result = self.analyze(
+                    question=question,
+                    mode=detected_mode.value,
+                    filter_source=filter_source,
+                    n_results=n_results,
+                )
+                # Convert HypothesisEngineResult to DiscoveryResult for compatibility
+                # Extract evidence claims from the graph
+                evidence_claims = []
+                if result.evidence_graph and result.evidence_graph.claims:
+                    for claim in result.evidence_graph.claims:
+                        claim_text = claim.subject
+                        if claim.predicate:
+                            claim_text += f" {claim.predicate}"
+                        if claim.object:
+                            claim_text += f" {claim.object}"
+                        if claim.source_refs:
+                            claim_text += f" {' '.join(claim.source_refs)}"
+                        evidence_claims.append(claim_text)
+
+                return DiscoveryResult(
+                    query=question,
+                    evidence=evidence_claims,
+                    inference=[],
+                    speculation=[],
+                    hypotheses=[],
+                    sources=result.sources,
+                    model_used=result.model_used,
+                    total_chunks_searched=result.total_chunks_searched,
+                    uncertainty_notes=result.uncertainty_notes,
+                    detected_mode=detected_mode.value,
+                    raw_output=f"[AUTO-ROUTED TO {detected_mode.value.upper()} MODE]\n\n"
+                    f"Confidence: {result.confidence}/100\n"
+                    f"Justification: {result.confidence_justification}\n\n"
+                    + "\n".join(result.uncertainty_notes),
+                )
 
         n = n_results or self.n_retrieve
 

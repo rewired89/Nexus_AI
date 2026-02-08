@@ -270,6 +270,15 @@ class DiscoveryResult(BaseModel):
         default_factory=list,
         description="Explicit declarations of uncertainty or missing data",
     )
+    # Auto-routing fields
+    detected_mode: str = Field(
+        default="discovery",
+        description="Mode that was actually used (discovery, decision, tutor, etc.)",
+    )
+    raw_output: str = Field(
+        default="",
+        description="Raw LLM output when auto-routed to a different mode",
+    )
 
 
 class RAGResponse(BaseModel):
