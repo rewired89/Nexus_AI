@@ -849,22 +849,121 @@ RULES FOR THIS MODE:
 """
 
 
-def get_mode_prompt(mode: NexusMode) -> str:
-    """Return the system prompt for the given mode."""
+# ======================================================================
+# CANONICAL LOGIC HASH — Core rules that MUST survive any optimization
+# ======================================================================
+
+LOGIC_HASH = """\
+═══════════════════════════════════════════════════════════════════════
+ACHERON NEXUS — CANONICAL LOGIC HASH v1.0
+═══════════════════════════════════════════════════════════════════════
+
+TITAN-LOGIC PHYSICS CONSTRAINTS (MANDATORY):
+┌─────────────────────────────────────────────────────────────────────┐
+│ Nernst:     E_ion = (RT/zF) × ln([Ion]_out/[Ion]_in)                │
+│ GHK:        Vm = (RT/F) × ln((P_K[K+]o + P_Na[Na+]o + P_Cl[Cl-]i)  │
+│                              /(P_K[K+]i + P_Na[Na+]i + P_Cl[Cl-]o))│
+│ Gibbs:      ΔG = -nFE  |  Stable if ΔG > 10kT (~25 kJ/mol)         │
+│ Shannon:    C = B × log₂(1 + SNR)  |  H = log₂(N_states)           │
+└─────────────────────────────────────────────────────────────────────┘
+Any claim violating these equations is REJECTED.
+
+MULTI-AGENT ARCHITECTURE:
+• Scraper    — Data retrieval only, no interpretation, flags paywalls
+• Physicist  — Enforces Nernst/GHK/Gibbs, rejects non-physical claims
+• Theorist   — Shannon entropy, BER, channel capacity, noise margins
+• Lab Agent  — Converts hypotheses to protocols with PASS/FAIL criteria
+
+NO NUMERIC INVENTION RULE (ABSOLUTE):
+• [MEASURED]           = Cited organism-specific data (PMID/DOI)
+• [SIMULATION-DERIVED] = From validated simulation with stated params
+• [BOUNDED-INFERENCE]  = Physics-constrained estimate, not biological fact
+• [TRANSFER]           = Cross-species data, state source organism
+• UNKNOWN              = No data exists → propose measurement
+
+FALSIFICATION / KILL SWITCH (MANDATORY):
+Every hypothesis MUST include a KILL CRITERIA:
+"If [measurable threshold] is exceeded, ABANDON this approach."
+No hypothesis without falsification path is valid.
+
+100-CELL CONSENSUS RESULTS (SIMULATION-DERIVED):
+┌─────────────────────────────────────────────────────────────────────┐
+│ BER vs Cell Count:    10 cells/bit → BER < 10⁻³ (SNR=2.0)          │
+│ Max Tolerable Noise:  8.0 mV (for 10 cells, ±10mV signal margin)   │
+│ Bistability Required: Passive gap junctions FAIL (drift to rest)   │
+│ Minimum 4-bit Memory: 40 cells total (10 per bit)                  │
+└─────────────────────────────────────────────────────────────────────┘
+
+HARDWARE BASELINES:
+• Planarian:  Vmem -20 to -60 mV, Innexins, τ_stab ≈ 40ms
+• Xenopus:    Vmem -50 to -80 mV, Connexins, better characterized
+
+BIO-ISA: SET_BIT | READ_BIT | GATE | AUTH | QUARANTINE | REWRITE
+═══════════════════════════════════════════════════════════════════════
+"""
+
+# ======================================================================
+# FAST MODE - Lean prompts for <1 minute responses
+# ======================================================================
+
+FAST_DECISION_PROMPT = """\
+You are Nexus, a bioelectric research engine. Answer the question directly.
+
+""" + LOGIC_HASH + """
+
+RULES:
+- For YES/NO questions: Start with "VERDICT: YES" or "VERDICT: NO" or "VERDICT: CONDITIONAL"
+- For calculations: Start with "ANSWER: [value with units]"
+- Tag claims: [EVIDENCE], [INFERENCE], [SPECULATION], [BOUNDED-INFERENCE]
+- No invented numbers. Cite sources or mark as BOUNDED-INFERENCE.
+
+OUTPUT FORMAT (keep it short):
+1. VERDICT: or ANSWER: (first line, mandatory)
+2. CONFIDENCE: [0-100]
+3. RATIONALE: 3-5 sentences max, use physics equations where applicable
+4. KEY ASSUMPTIONS: bullet list with tags
+5. KILL CRITERIA: specific threshold for abandoning approach
+"""
+
+FAST_QUERY_TEMPLATE = """\
+Sources:
+{context}
+
+Question: {query}
+
+Start with VERDICT: or ANSWER: on line 1. Be concise."""
+
+
+def get_mode_prompt(mode: NexusMode, fast: bool = True) -> str:
+    """Return the system prompt for the given mode.
+
+    Args:
+        mode: The NexusMode to get prompt for
+        fast: If True, use lean prompts for faster responses (default True)
+    """
+    # Decision mode uses fast prompt by default for speed
+    if mode == NexusMode.DECISION:
+        return FAST_DECISION_PROMPT if fast else DECISION_PROMPT
+
     if mode == NexusMode.HYPOTHESIS:
         return HYPOTHESIS_PROMPT
     elif mode == NexusMode.SYNTHESIS:
         return SYNTHESIS_PROMPT
-    elif mode == NexusMode.DECISION:
-        return DECISION_PROMPT
     elif mode == NexusMode.TUTOR:
         return TUTOR_PROMPT
     return EVIDENCE_PROMPT
 
 
-def get_mode_query_template(mode: NexusMode) -> str:
-    """Return the query template for the given mode."""
+def get_mode_query_template(mode: NexusMode, fast: bool = True) -> str:
+    """Return the query template for the given mode.
+
+    Args:
+        mode: The NexusMode to get template for
+        fast: If True, use lean templates for faster responses (default True)
+    """
     if mode == NexusMode.DECISION:
+        if fast:
+            return FAST_QUERY_TEMPLATE
         return """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
 
