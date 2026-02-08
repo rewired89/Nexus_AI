@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 # ======================================================================
 
 _DECISION_TRIGGERS = [
+    # Yes/No viability questions
     "should i", "should we", "is this viable", "is it viable",
     "is this feasible", "is it feasible", "yes or no",
     "go/no-go", "go or no-go", "go no-go",
@@ -49,6 +50,19 @@ _DECISION_TRIGGERS = [
     "switch substrate", "abandon", "give up on",
     "is it possible to", "is this possible",
     "can we use", "should this be",
+    # Calculation/quantitative determination questions
+    "what is the maximum", "what is the minimum", "what's the maximum", "what's the minimum",
+    "maximum tolerable", "minimum required", "how many cells", "how many neoblasts",
+    "calculate", "compute", "determine the", "find the value",
+    "what noise level", "what threshold", "what ber", "what error rate",
+    "exceeds", "falls below", "drops below", "rises above",
+    "before ber", "for ber <", "for ber>", "ber <", "ber>", "ber=",
+    "10^-", "10e-",  # Scientific notation thresholds
+    "tolerance", "tolerable", "acceptable",
+    "given that", "assuming that",  # Conditional calculation setup
+    # Comparison/evaluation questions
+    "compare", "which is better", "what performs better",
+    "enough to", "sufficient to", "required to achieve",
 ]
 
 _HYPOTHESIS_TRIGGERS = [
