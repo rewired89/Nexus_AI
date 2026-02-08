@@ -350,6 +350,58 @@ async def api_ledger():
     return [e.model_dump(mode="json") for e in entries]
 
 
+# ======================================================================
+# FAST ENDPOINT - Direct LLM call with minimal prompt for <1min responses
+# ======================================================================
+@app.post("/api/fast")
+async def api_fast(req: QueryRequest):
+    """Fast decision/calculation endpoint - bypasses complex pipeline.
+
+    Use this for quick answers to calculation or viability questions.
+    Returns the raw LLM response with minimal processing.
+    """
+    from acheron.rag.hypothesis_engine import FAST_DECISION_PROMPT, FAST_QUERY_TEMPLATE
+
+    settings = get_settings()
+    if not settings.compute_available:
+        return _compute_error_json()
+
+    pipeline = get_pipeline()
+
+    # Retrieve minimal context (just 4 chunks for speed)
+    results = pipeline.store.search(
+        query=req.question,
+        n_results=4,
+        filter_source=req.source_filter
+    )
+
+    # Format context
+    context_parts = []
+    for i, r in enumerate(results, 1):
+        context_parts.append(f"[{i}] {r.paper_title}: {r.text[:300]}...")
+    context = "\n\n".join(context_parts)
+
+    # Build the prompt
+    user_prompt = FAST_QUERY_TEMPLATE.format(context=context, query=req.question)
+
+    # Direct LLM call
+    raw_output = pipeline._generate_with_system(
+        system_prompt=FAST_DECISION_PROMPT,
+        user_prompt=user_prompt,
+        max_tokens=1000,  # Limit response length for speed
+    )
+
+    return {
+        "question": req.question,
+        "answer": raw_output,
+        "sources": [
+            {"title": r.paper_title, "doi": r.doi}
+            for r in results
+        ],
+        "mode": "fast",
+    }
+
+
 @app.post("/api/upload")
 async def api_upload(
     file: UploadFile = File(...),
