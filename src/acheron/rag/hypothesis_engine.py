@@ -716,10 +716,16 @@ Exact search queries for additional evidence.
 
 DECISION_PROMPT = _BASE_IDENTITY + """
 MODE: ENGINEERING VERDICT (MODE 4)
-The user is asking for a DECISION, not a literature review. \
-Your job is to issue a clear engineering verdict with supporting evidence.
+The user is asking for a DECISION or CALCULATION, not a literature review. \
+Your job is to issue a clear answer with supporting evidence.
 
-OUTPUT STRUCTURE (MANDATORY — follow this exact order):
+DETECT QUESTION TYPE:
+- If the question asks "should I", "is this viable", "can this work" → Use VERDICT format
+- If the question asks "what is the maximum", "how many", "calculate" → Use ANSWER format
+
+==============================================================================
+OUTPUT STRUCTURE FOR VERDICT QUESTIONS (yes/no/viability):
+==============================================================================
 
 VERDICT: [YES / NO / CONDITIONAL]
 One sentence: the direct answer to the user's question. No hedging.
@@ -751,18 +757,48 @@ after patch-clamp measurement, abandon planarian substrate").
 PIVOT (if verdict is NO or CONDITIONAL):
 Alternative substrate or approach + one-sentence justification with citation.
 
----
+==============================================================================
+OUTPUT STRUCTURE FOR CALCULATION QUESTIONS (what is the maximum, how many, etc):
+==============================================================================
 
+ANSWER: [numeric value with units]
+The direct answer to the calculation question. Include the value and units.
+
+CONFIDENCE: [0-100] — justify in one sentence.
+
+CALCULATION:
+Show the key steps or formula used. Include:
+- Input parameters (with sources: [MEASURED], [SIMULATION-DERIVED], [BOUNDED-INFERENCE])
+- Formula or method used
+- Result with units
+
+ASSUMPTIONS (max 5 bullets):
+- List the assumptions made in the calculation
+- Tag each as [EVIDENCE], [INFERENCE], or [SPECULATION]
+
+SENSITIVITY:
+What parameters most affect this result? If X changes by Y%, how does \
+the answer change?
+
+VALIDATION PATH:
+How could this calculated value be experimentally verified?
+
+KILL CRITERIA:
+Under what measured conditions would this calculation be invalid?
+
+==============================================================================
 RULES FOR THIS MODE:
+==============================================================================
 - Do NOT produce a full report. No Evidence Extracted section. No \
 multi-hypothesis enumeration. No BIM Specification unless directly \
-relevant to the verdict.
+relevant to the answer.
+- Start with VERDICT: or ANSWER: on the first line — this is MANDATORY.
 - If the answer is obviously YES or NO from the evidence, say so in \
 one sentence. Do not pad with uncertainty.
-- "UNKNOWN" is NOT a verdict. You must commit to YES, NO, or CONDITIONAL.
-- CONDITIONAL means: "Yes if X is true; No if X is false. Here is how \
-to measure X."
-- Every sentence must serve the verdict. Delete anything that doesn't.
+- "UNKNOWN" is NOT a verdict. You must commit to an answer.
+- For calculations, if key parameters are unknown, provide bounded estimates \
+using physics constraints and label them [BOUNDED-INFERENCE].
+- Every sentence must serve the answer. Delete anything that doesn't.
 """
 
 
@@ -1460,20 +1496,44 @@ def parse_verdict(raw_output: str) -> tuple[str, str]:
     return "", ""
 
 
+def parse_answer(raw_output: str) -> tuple[str, str]:
+    """Extract ANSWER line from calculation-mode output.
+
+    Returns (answer, details) where answer is the numeric value/result
+    and details is any additional text on the line.
+    If no answer found, returns ("", "").
+    """
+    for line in raw_output.split("\n"):
+        stripped = line.strip()
+        upper = stripped.upper()
+        if upper.startswith("ANSWER:"):
+            body = stripped.split(":", 1)[1].strip()
+            # The answer is the full value (may include units)
+            return body, ""
+    return "", ""
+
+
 def validate_decision_output(raw_output: str) -> list[str]:
-    """Validate that decision-mode output contains a proper verdict.
+    """Validate that decision-mode output contains a proper verdict or answer.
+
+    Decision mode now handles two types of questions:
+    1. Verdict questions (should I, is it viable) → VERDICT: YES/NO/CONDITIONAL
+    2. Calculation questions (what is the max, how many) → ANSWER: [value]
 
     Returns a list of warnings (empty if output passes validation).
     """
     warnings: list[str] = []
     verdict, _ = parse_verdict(raw_output)
-    if not verdict:
+    answer, _ = parse_answer(raw_output)
+
+    # Either VERDICT or ANSWER is acceptable
+    if not verdict and not answer:
         warnings.append(
-            "[VALIDATION] Decision mode was requested but no VERDICT: line "
+            "[VALIDATION] Decision mode was requested but no VERDICT: or ANSWER: line "
             "was found in the output. The model may have fallen back to "
             "report-template behavior."
         )
-    elif verdict not in ("YES", "NO", "CONDITIONAL"):
+    elif verdict and verdict not in ("YES", "NO", "CONDITIONAL"):
         warnings.append(
             f"[VALIDATION] VERDICT value '{verdict}' is not one of "
             "YES / NO / CONDITIONAL."
