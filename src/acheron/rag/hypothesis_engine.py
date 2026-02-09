@@ -63,6 +63,15 @@ _DECISION_TRIGGERS = [
     # Comparison/evaluation questions
     "compare", "which is better", "what performs better",
     "enough to", "sufficient to", "required to achieve",
+    # Parameter value requests (triggers Parameter Fallback System)
+    "what is the", "what's the", "what are the",
+    "concentration", "conductance", "permeability", "vmem",
+    "membrane potential", "resting potential",
+    "incubation time", "exposure time", "loading time",
+    "microscope settings", "filter settings", "wavelength",
+    "numerical value", "parameter", "measure",
+    "for dugesia", "for planarian", "for brian2", "for simulation",
+    "give me the", "provide the", "extract the",
 ]
 
 _HYPOTHESIS_TRIGGERS = [
@@ -1872,23 +1881,41 @@ def parse_answer(raw_output: str) -> tuple[str, str]:
     return "", ""
 
 
-def validate_decision_output(raw_output: str) -> list[str]:
-    """Validate that decision-mode output contains a proper verdict or answer.
+def parse_parameter(raw_output: str) -> tuple[str, str]:
+    """Extract PARAMETER line from parameter-query output.
 
-    Decision mode now handles two types of questions:
+    Returns (parameter_name, value) where parameter_name is what was asked
+    and value is the estimate or table reference.
+    If no parameter found, returns ("", "").
+    """
+    for line in raw_output.split("\n"):
+        stripped = line.strip()
+        upper = stripped.upper()
+        if upper.startswith("PARAMETER:"):
+            body = stripped.split(":", 1)[1].strip()
+            return body, ""
+    return "", ""
+
+
+def validate_decision_output(raw_output: str) -> list[str]:
+    """Validate that decision-mode output contains a proper verdict, answer, or parameter.
+
+    Decision mode now handles three types of questions:
     1. Verdict questions (should I, is it viable) → VERDICT: YES/NO/CONDITIONAL
     2. Calculation questions (what is the max, how many) → ANSWER: [value]
+    3. Parameter questions (what is the conductance) → PARAMETER: [name]
 
     Returns a list of warnings (empty if output passes validation).
     """
     warnings: list[str] = []
     verdict, _ = parse_verdict(raw_output)
     answer, _ = parse_answer(raw_output)
+    parameter, _ = parse_parameter(raw_output)
 
-    # Either VERDICT or ANSWER is acceptable
-    if not verdict and not answer:
+    # VERDICT, ANSWER, or PARAMETER is acceptable
+    if not verdict and not answer and not parameter:
         warnings.append(
-            "[VALIDATION] Decision mode was requested but no VERDICT: or ANSWER: line "
+            "[VALIDATION] Decision mode was requested but no VERDICT:, ANSWER:, or PARAMETER: line "
             "was found in the output. The model may have fallen back to "
             "report-template behavior."
         )
@@ -1899,7 +1926,8 @@ def validate_decision_output(raw_output: str) -> list[str]:
         )
 
     upper = raw_output.upper()
-    if "KILL CRITERIA" not in upper:
+    # Kill criteria not required for parameter queries (they're informational)
+    if "KILL CRITERIA" not in upper and not parameter:
         warnings.append(
             "[VALIDATION] No KILL CRITERIA section found. Decision output "
             "should specify when to abandon the approach."
