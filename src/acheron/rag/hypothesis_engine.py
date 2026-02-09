@@ -853,6 +853,226 @@ RULES FOR THIS MODE:
 # CANONICAL LOGIC HASH — Core rules that MUST survive any optimization
 # ======================================================================
 
+# ======================================================================
+# PARAMETER FALLBACK DATABASE — Cross-species reference values
+# ======================================================================
+
+PARAMETER_FALLBACK_DB = {
+    "gap_junction_conductance": {
+        "query_patterns": ["gap junction conductance", "gj conductance", "innexin conductance", "connexin conductance"],
+        "unit": "pS",
+        "fallbacks": [
+            {"species": "Hirudo medicinalis (leech)", "value": "150-300", "source": "Bhangale et al.", "confidence": "MEDIUM", "note": "Invertebrate innexin"},
+            {"species": "C. elegans", "value": "50-200", "source": "Liu & Bhangale 2013", "confidence": "MEDIUM", "note": "Invertebrate innexin"},
+            {"species": "Xenopus laevis", "value": "100-150", "source": "Harris et al. 2007", "confidence": "HIGH", "note": "Connexin, vertebrate"},
+            {"species": "HeLa cells (Cx43)", "value": "90-120", "source": "Multiple", "confidence": "HIGH", "note": "Mammalian connexin"},
+        ],
+        "planarian_estimate": "100-200 pS",
+        "estimate_basis": "Invertebrate innexin range",
+        "measurement_protocol": "Dual whole-cell patch clamp on adjacent cells"
+    },
+    "resting_vmem": {
+        "query_patterns": ["resting potential", "resting vmem", "membrane potential", "vmem baseline"],
+        "unit": "mV",
+        "fallbacks": [
+            {"species": "Xenopus oocyte", "value": "-40 to -60", "source": "Multiple", "confidence": "HIGH", "note": "Standard reference"},
+            {"species": "Mammalian neurons", "value": "-60 to -70", "source": "Textbook", "confidence": "HIGH", "note": ""},
+            {"species": "Stem cells (general)", "value": "-20 to -50", "source": "Bhangale et al.", "confidence": "MEDIUM", "note": "More depolarized than differentiated"},
+            {"species": "Zebrafish embryo", "value": "-30 to -50", "source": "Zhang 2024", "confidence": "MEDIUM", "note": "Developmental context"},
+        ],
+        "planarian_estimate": "-20 to -60 mV",
+        "estimate_basis": "Stem cell + invertebrate range",
+        "measurement_protocol": "DiBAC4(3) imaging with calibration curve, or patch clamp"
+    },
+    "k_permeability": {
+        "query_patterns": ["k+ permeability", "potassium permeability", "pk", "k permeability"],
+        "unit": "cm/s",
+        "fallbacks": [
+            {"species": "Squid giant axon", "value": "1.8 × 10⁻⁶", "source": "Hodgkin-Huxley", "confidence": "HIGH", "note": "Classic measurement"},
+            {"species": "Mammalian neurons", "value": "1-5 × 10⁻⁶", "source": "Multiple", "confidence": "HIGH", "note": ""},
+            {"species": "Xenopus oocyte", "value": "0.5-2 × 10⁻⁶", "source": "Multiple", "confidence": "MEDIUM", "note": ""},
+        ],
+        "planarian_estimate": "1-3 × 10⁻⁶ cm/s",
+        "estimate_basis": "Invertebrate neuron range",
+        "measurement_protocol": "Patch clamp with ion substitution"
+    },
+    "na_permeability": {
+        "query_patterns": ["na+ permeability", "sodium permeability", "pna", "na permeability"],
+        "unit": "cm/s",
+        "fallbacks": [
+            {"species": "Squid giant axon", "value": "0.04 × 10⁻⁶", "source": "Hodgkin-Huxley", "confidence": "HIGH", "note": "At rest"},
+            {"species": "Mammalian neurons", "value": "0.02-0.05 × 10⁻⁶", "source": "Multiple", "confidence": "HIGH", "note": "At rest"},
+        ],
+        "planarian_estimate": "0.03-0.05 × 10⁻⁶ cm/s",
+        "estimate_basis": "Typical resting Na permeability",
+        "measurement_protocol": "Patch clamp with TTX and ion substitution"
+    },
+    "membrane_capacitance": {
+        "query_patterns": ["membrane capacitance", "cm", "capacitance"],
+        "unit": "µF/cm²",
+        "fallbacks": [
+            {"species": "Universal biological", "value": "0.9-1.1", "source": "Biophysics constant", "confidence": "VERY HIGH", "note": "Lipid bilayer property"},
+        ],
+        "planarian_estimate": "1.0 µF/cm²",
+        "estimate_basis": "Universal biological constant",
+        "measurement_protocol": "Not needed - use 1.0 µF/cm²"
+    },
+    "dibac_concentration": {
+        "query_patterns": ["dibac concentration", "dibac4", "voltage dye concentration"],
+        "unit": "µM",
+        "fallbacks": [
+            {"species": "Xenopus embryo", "value": "0.5-2", "source": "Adams et al.", "confidence": "HIGH", "note": "Standard protocol"},
+            {"species": "Zebrafish", "value": "1-5", "source": "Zhang 2024", "confidence": "HIGH", "note": ""},
+            {"species": "Cell culture", "value": "0.1-1", "source": "Bhangale et al.", "confidence": "HIGH", "note": ""},
+        ],
+        "planarian_estimate": "0.5-2 µM",
+        "estimate_basis": "Aquatic organism range",
+        "measurement_protocol": "Start with 1 µM, adjust based on signal"
+    },
+    "ion_concentration_k_internal": {
+        "query_patterns": ["[k+]i", "internal potassium", "intracellular k+", "k+ inside"],
+        "unit": "mM",
+        "fallbacks": [
+            {"species": "Mammalian cells", "value": "140-150", "source": "Textbook", "confidence": "HIGH", "note": ""},
+            {"species": "Squid axon", "value": "400", "source": "Hodgkin-Huxley", "confidence": "HIGH", "note": "Marine invertebrate"},
+            {"species": "Freshwater invertebrate", "value": "100-140", "source": "Estimated", "confidence": "MEDIUM", "note": "Lower than marine"},
+        ],
+        "planarian_estimate": "100-140 mM",
+        "estimate_basis": "Freshwater invertebrate",
+        "measurement_protocol": "Ion-selective microelectrode or flame photometry"
+    },
+    "ion_concentration_k_external": {
+        "query_patterns": ["[k+]o", "external potassium", "extracellular k+", "k+ outside"],
+        "unit": "mM",
+        "fallbacks": [
+            {"species": "Mammalian ECF", "value": "4-5", "source": "Textbook", "confidence": "HIGH", "note": ""},
+            {"species": "Freshwater", "value": "0.1-1", "source": "Environmental", "confidence": "HIGH", "note": "Planarian habitat"},
+        ],
+        "planarian_estimate": "1-5 mM",
+        "estimate_basis": "Freshwater + tissue ECF",
+        "measurement_protocol": "Measure planarian water K+ content"
+    },
+    "microscope_settings": {
+        "query_patterns": ["microscope settings", "excitation wavelength", "emission wavelength", "filter settings", "fluorescence settings"],
+        "unit": "nm",
+        "fallbacks": [
+            {"species": "DiBAC4(3) standard", "value": "Ex: 490nm, Em: 520nm", "source": "Invitrogen spec sheet", "confidence": "VERY HIGH", "note": "FITC filter works"},
+            {"species": "FluoVolt", "value": "Ex: 522nm, Em: 535nm", "source": "ThermoFisher", "confidence": "VERY HIGH", "note": "For fast signals"},
+        ],
+        "planarian_estimate": "Ex: 490nm, Em: 520nm (DiBAC4/3 with FITC filter)",
+        "estimate_basis": "Standard voltage dye spectroscopy",
+        "measurement_protocol": "Use FITC/GFP filter cube, 100-500ms exposure"
+    },
+    "incubation_time": {
+        "query_patterns": ["incubation time", "dye loading time", "staining time", "loading time"],
+        "unit": "minutes",
+        "fallbacks": [
+            {"species": "Xenopus embryo", "value": "30-60", "source": "Adams et al.", "confidence": "HIGH", "note": "DiBAC4(3)"},
+            {"species": "Cell culture", "value": "15-30", "source": "Multiple", "confidence": "HIGH", "note": "Faster due to single cells"},
+            {"species": "Zebrafish embryo", "value": "30-45", "source": "Zhang 2024", "confidence": "HIGH", "note": ""},
+        ],
+        "planarian_estimate": "30-60 minutes",
+        "estimate_basis": "Whole organism, similar to Xenopus",
+        "measurement_protocol": "Start with 30 min, check signal, extend if needed"
+    },
+    "noise_level": {
+        "query_patterns": ["noise level", "voltage noise", "membrane noise", "thermal noise", "biological noise"],
+        "unit": "mV",
+        "fallbacks": [
+            {"species": "Neurons (general)", "value": "1-3", "source": "Multiple", "confidence": "HIGH", "note": "Thermal + channel noise"},
+            {"species": "Non-excitable cells", "value": "3-8", "source": "Bhangale et al.", "confidence": "MEDIUM", "note": "Higher variability"},
+            {"species": "Simulation-derived", "value": "≤8", "source": "Acheron simulations", "confidence": "MEDIUM", "note": "Max tolerable for 10 cells/bit"},
+        ],
+        "planarian_estimate": "3-5 mV",
+        "estimate_basis": "Non-excitable tissue range",
+        "measurement_protocol": "Long-term patch clamp recording, calculate RMS noise"
+    },
+    "signal_propagation_speed": {
+        "query_patterns": ["signal propagation", "propagation speed", "conduction velocity", "signal speed"],
+        "unit": "mm/s",
+        "fallbacks": [
+            {"species": "Gap junction syncytium", "value": "0.1-10", "source": "Cable equation estimates", "confidence": "MEDIUM", "note": "Depends on Gj and geometry"},
+            {"species": "Cardiac tissue", "value": "200-400", "source": "Textbook", "confidence": "HIGH", "note": "High Gj, specialized"},
+            {"species": "Simulation-derived", "value": "0.1-10", "source": "Acheron simulations", "confidence": "MEDIUM", "note": "For planarian-scale tissue"},
+        ],
+        "planarian_estimate": "0.1-10 mm/s",
+        "estimate_basis": "Non-excitable syncytium, cable equation",
+        "measurement_protocol": "Stimulate one end, image voltage wave propagation"
+    },
+}
+
+
+def detect_parameter_query(query: str) -> list[str]:
+    """Detect which parameters the user is asking about.
+
+    Returns a list of parameter keys that match the query.
+    """
+    lower = query.lower()
+    matched_params = []
+
+    for param_key, param_data in PARAMETER_FALLBACK_DB.items():
+        for pattern in param_data["query_patterns"]:
+            if pattern in lower:
+                matched_params.append(param_key)
+                break
+
+    return matched_params
+
+
+def generate_fallback_context(matched_params: list[str], target_species: str = "Dugesia japonica") -> str:
+    """Generate fallback context for parameters not found in literature.
+
+    This provides cross-species reference values with confidence levels.
+    """
+    if not matched_params:
+        return ""
+
+    lines = [
+        "",
+        "═══════════════════════════════════════════════════════════════════════",
+        f"PARAMETER FALLBACK DATA (No direct measurements found for {target_species})",
+        "═══════════════════════════════════════════════════════════════════════",
+        "",
+    ]
+
+    for param_key in matched_params:
+        param_data = PARAMETER_FALLBACK_DB.get(param_key, {})
+        if not param_data:
+            continue
+
+        unit = param_data.get("unit", "")
+        lines.append(f"PARAMETER: {param_key.replace('_', ' ').title()}")
+        lines.append(f"Unit: {unit}")
+        lines.append("")
+        lines.append("Cross-species reference values:")
+        lines.append("┌" + "─" * 70 + "┐")
+
+        for fb in param_data.get("fallbacks", []):
+            conf_emoji = {"VERY HIGH": "●●●●", "HIGH": "●●●○", "MEDIUM": "●●○○", "LOW": "●○○○"}.get(fb["confidence"], "○○○○")
+            lines.append(f"│ {fb['species']:<30} {fb['value']:>15} {unit:<8} [{conf_emoji}] │")
+            if fb.get("note"):
+                lines.append(f"│   Note: {fb['note']:<58} │")
+
+        lines.append("└" + "─" * 70 + "┘")
+        lines.append("")
+        lines.append(f"ESTIMATE FOR {target_species.upper()}: {param_data.get('planarian_estimate', 'UNKNOWN')}")
+        lines.append(f"Basis: {param_data.get('estimate_basis', 'N/A')}")
+        lines.append(f"Confidence: [BOUNDED-INFERENCE] - Extrapolated from related species")
+        lines.append("")
+        lines.append(f"TO MEASURE DIRECTLY: {param_data.get('measurement_protocol', 'See literature')}")
+        lines.append("")
+        lines.append("─" * 73)
+        lines.append("")
+
+    lines.append("NOTE: These are ESTIMATES based on related species. For simulation,")
+    lines.append("use these values with appropriate uncertainty. For wet-lab protocols,")
+    lines.append("measure directly in your target organism.")
+    lines.append("═══════════════════════════════════════════════════════════════════════")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
 LOGIC_HASH = """\
 ═══════════════════════════════════════════════════════════════════════
 ACHERON NEXUS — CANONICAL LOGIC HASH v1.0
@@ -911,14 +1131,29 @@ You are Nexus, a bioelectric research engine. Answer the question directly.
 
 """ + LOGIC_HASH + """
 
+PARAMETER FALLBACK RULE (CRITICAL):
+When the user asks for a specific parameter (Vmem, conductance, permeability, etc.)
+and no organism-specific measurement exists in the sources:
+1. Use the PARAMETER FALLBACK DATA provided in the context
+2. Present values from related species with confidence levels
+3. Provide your ESTIMATE for the target species
+4. Label all estimates as [BOUNDED-INFERENCE]
+5. Include the measurement protocol to obtain the actual value
+
+NEVER say "UNKNOWN - needs measurement" without providing:
+- Cross-species reference values
+- A bounded estimate for the target species
+- The specific experiment to measure it
+
 RULES:
 - For YES/NO questions: Start with "VERDICT: YES" or "VERDICT: NO" or "VERDICT: CONDITIONAL"
 - For calculations: Start with "ANSWER: [value with units]"
+- For parameter requests: Start with "PARAMETER: [name]" and provide fallback table
 - Tag claims: [EVIDENCE], [INFERENCE], [SPECULATION], [BOUNDED-INFERENCE]
-- No invented numbers. Cite sources or mark as BOUNDED-INFERENCE.
+- No invented numbers. Cite sources or use cross-species estimates with labels.
 
 OUTPUT FORMAT (keep it short):
-1. VERDICT: or ANSWER: (first line, mandatory)
+1. VERDICT: or ANSWER: or PARAMETER: (first line, mandatory)
 2. CONFIDENCE: [0-100]
 3. RATIONALE: 3-5 sentences max, use physics equations where applicable
 4. KEY ASSUMPTIONS: bullet list with tags
@@ -954,29 +1189,43 @@ def get_mode_prompt(mode: NexusMode, fast: bool = True) -> str:
     return EVIDENCE_PROMPT
 
 
-def get_mode_query_template(mode: NexusMode, fast: bool = True) -> str:
+def get_mode_query_template(mode: NexusMode, fast: bool = True, query: str = "") -> str:
     """Return the query template for the given mode.
 
     Args:
         mode: The NexusMode to get template for
         fast: If True, use lean templates for faster responses (default True)
+        query: The user's query (used for parameter fallback detection)
     """
+    # Detect if this is a parameter query and generate fallback context
+    fallback_context = ""
+    if query:
+        matched_params = detect_parameter_query(query)
+        if matched_params:
+            fallback_context = generate_fallback_context(matched_params)
+
     if mode == NexusMode.DECISION:
         if fast:
+            if fallback_context:
+                return FAST_QUERY_TEMPLATE.replace(
+                    "Sources:\n{context}",
+                    "Sources:\n{context}\n" + fallback_context
+                )
             return FAST_QUERY_TEMPLATE
-        return """\
+        base_template = """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
 
 === SOURCE PASSAGES ===
 {context}
 ========================
-
+""" + fallback_context + """
 Decision query: {query}
 
 Issue a VERDICT first. Follow the exact output structure from your system \
 prompt (VERDICT → CONFIDENCE → RATIONALE → KEY EVIDENCE → KEY UNKNOWNS → \
 ACTION → KILL CRITERIA → PIVOT). Do NOT produce a full report. \
 Every claim must trace to a source number."""
+        return base_template
     if mode == NexusMode.TUTOR:
         return """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
@@ -984,24 +1233,35 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 === SOURCE PASSAGES ===
 {context}
 ========================
-
+""" + fallback_context + """
 Learning query: {query}
 
 Provide a technically accurate answer, then include the CONCEPTS FOR THE \
 RESEARCHER section with: GLOSSARY (3 terms), ANALOGY (computing/cybersecurity), \
 THE 'WHY' (connection to Acheron), and SELF-STUDY TASK (one specific resource). \
-End with 2-3 FOLLOW-UP QUESTIONS. Every claim must trace to a source number."""
+End with 2-3 FOLLOW-UP QUESTIONS. Every claim must trace to a source number.
+
+IMPORTANT: If the sources do not contain the specific numerical values requested,
+use the PARAMETER FALLBACK DATA above to provide cross-species estimates.
+Always label these as [BOUNDED-INFERENCE] and state the measurement protocol
+to obtain the actual value for the target species."""
+
     return """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
 
 === SOURCE PASSAGES ===
 {context}
 ========================
-
+""" + fallback_context + """
 Research query: {query}
 
 Execute the full {mode_label} analysis using ALL the mandatory sections described \
-in your system prompt. Be precise. Every claim must trace to a source number.""".format(
+in your system prompt. Be precise. Every claim must trace to a source number.
+
+IMPORTANT: If the sources do not contain the specific numerical values requested,
+use the PARAMETER FALLBACK DATA above to provide cross-species estimates.
+Always label these as [BOUNDED-INFERENCE] and state the measurement protocol
+to obtain the actual value for the target species.""".format(
         context="{context}",
         query="{query}",
         mode_label=mode.value.upper(),

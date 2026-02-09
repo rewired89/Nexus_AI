@@ -918,7 +918,7 @@ class RAGPipeline:
 
         # Layer 3 — Compute with mode-specific prompt
         system_prompt = get_mode_prompt(detected_mode)
-        query_template = get_mode_query_template(detected_mode)
+        query_template = get_mode_query_template(detected_mode, query=question)
         context_str = self._format_context(top_results)
         user_prompt = query_template.format(context=context_str, query=question)
 
