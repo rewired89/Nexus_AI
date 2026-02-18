@@ -1956,12 +1956,33 @@ def get_mode_query_template(mode: NexusMode, fast: bool = True, query: str = "")
     # Combined extra context (parameter fallback + computation results)
     extra_context = fallback_context + computation_context
 
+    # Plain English layer — injected into ALL modes for accessibility
+    plain_english_context = ""
+    if query:
+        from acheron.reasoning.research_questions import (
+            is_casual_query,
+            translate_query,
+            format_translated_query,
+            detect_research_category,
+            get_plain_english_injection,
+        )
+        if is_casual_query(query):
+            tq = translate_query(query)
+            plain_english_context = (
+                "\n" + format_translated_query(tq) + "\n"
+                + get_plain_english_injection(tq.category)
+            )
+        else:
+            cats = detect_research_category(query)
+            if cats:
+                plain_english_context = get_plain_english_injection(cats[0])
+
     if mode == NexusMode.DECISION:
         if fast:
-            if extra_context:
+            if extra_context or plain_english_context:
                 return FAST_QUERY_TEMPLATE.replace(
                     "Sources:\n{context}",
-                    "Sources:\n{context}\n" + extra_context
+                    "Sources:\n{context}\n" + extra_context + plain_english_context
                 )
             return FAST_QUERY_TEMPLATE
         base_template = """\
@@ -1970,7 +1991,7 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 === SOURCE PASSAGES ===
 {context}
 ========================
-""" + extra_context + """
+""" + extra_context + plain_english_context + """
 Decision query: {query}
 
 Issue a VERDICT first. Follow the exact output structure from your system \
@@ -1979,27 +2000,6 @@ ACTION → KILL CRITERIA → PIVOT). Do NOT produce a full report. \
 Every claim must trace to a source number."""
         return base_template
     if mode == NexusMode.TUTOR:
-        # Inject plain English layer and query translation for casual queries
-        plain_english_context = ""
-        if query:
-            from acheron.reasoning.research_questions import (
-                is_casual_query,
-                translate_query,
-                format_translated_query,
-                detect_research_category,
-                get_plain_english_injection,
-            )
-            if is_casual_query(query):
-                tq = translate_query(query)
-                plain_english_context = (
-                    "\n" + format_translated_query(tq) + "\n"
-                    + get_plain_english_injection(tq.category)
-                )
-            else:
-                cats = detect_research_category(query)
-                if cats:
-                    plain_english_context = get_plain_english_injection(cats[0])
-
         return """\
 Retrieved source passages from the bioelectricity and biomedical research corpus:
 
@@ -2025,7 +2025,7 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 === SOURCE PASSAGES ===
 {context}
 ========================
-""" + extra_context + """
+""" + extra_context + plain_english_context + """
 Research query: {query}
 
 Execute the full {mode_label} analysis using ALL the mandatory sections described \
