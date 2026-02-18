@@ -500,3 +500,69 @@ class TestValidation:
         assert d["total_layers"] == 8
         assert len(d["layers"]) == 8
         assert len(d["interactions"]) == 10
+
+
+# ======================================================================
+# Section 10: Computation Layer Integration (hypothesis_engine wiring)
+# ======================================================================
+
+class TestComputationLayer:
+    """Test the reasoning engine computation layer wired into hypothesis_engine."""
+
+    def test_detect_ribozyme_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        q = "Calculate the Bio-RAID redundancy factor for QT45 with 94.1% fidelity"
+        modules = detect_computation_query(q)
+        assert "ribozyme" in modules
+
+    def test_detect_freeze_thaw_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query("freeze-thaw optimal interval")
+        assert "freeze_thaw" in modules
+
+    def test_detect_mosaic_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query("small-world topology fault tolerance")
+        assert "mosaic" in modules
+
+    def test_detect_state_space_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query("eigenvalue stability analysis")
+        assert "state_space" in modules
+
+    def test_detect_no_computation(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query("what is the gap junction conductance")
+        assert modules == []
+
+    def test_run_ribozyme_computation(self):
+        from acheron.rag.hypothesis_engine import run_computation
+        result = run_computation(["ribozyme"], "calculate redundancy for 99.9% integrity one year")
+        assert "REASONING ENGINE" in result
+        assert "Redundancy Factor" in result
+        assert "copies" in result.lower()
+
+    def test_run_computation_extracts_params(self):
+        from acheron.rag.hypothesis_engine import run_computation
+        result = run_computation(
+            ["ribozyme"],
+            "Bio-RAID redundancy for 99.9% data integrity for one year with fidelity of 94.1% and 72-day generation cycle"
+        )
+        assert "0.941" in result
+        assert "72" in result
+        assert "0.999" in result
+
+    def test_template_injection(self):
+        from acheron.rag.hypothesis_engine import get_mode_query_template
+        from acheron.models import NexusMode
+        query = "Calculate the Bio-RAID redundancy factor for QT45"
+        template = get_mode_query_template(NexusMode.DECISION, fast=True, query=query)
+        assert "REASONING ENGINE" in template
+        assert "Redundancy Factor" in template
+
+    def test_template_no_computation_for_plain_query(self):
+        from acheron.rag.hypothesis_engine import get_mode_query_template
+        from acheron.models import NexusMode
+        query = "Is planarian bioelectric memory viable?"
+        template = get_mode_query_template(NexusMode.DECISION, fast=True, query=query)
+        assert "REASONING ENGINE" not in template

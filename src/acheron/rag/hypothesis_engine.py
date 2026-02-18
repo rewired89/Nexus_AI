@@ -1082,6 +1082,446 @@ def generate_fallback_context(matched_params: list[str], target_species: str = "
     return "\n".join(lines)
 
 
+# ======================================================================
+# Reasoning Engine Computation Layer
+# ======================================================================
+
+# Maps query patterns to reasoning engine computation functions.
+# When a query matches, the corresponding function runs and its output
+# is injected as pre-computed context alongside RAG retrieval results.
+
+_COMPUTATION_TRIGGERS: list[tuple[list[str], str]] = [
+    # QT45 / ribozyme / redundancy / Bio-RAID
+    (
+        [
+            "redundancy factor", "bio-raid", "bioraid", "bio raid",
+            "qt45", "ribozyme", "copy fidelity", "copying fidelity",
+            "molecular storage", "data integrity",
+            "error correction overhead", "corruption probability",
+            "cross-chiral", "mirror-rna", "mirror rna",
+        ],
+        "ribozyme",
+    ),
+    # Freeze-thaw / eutectic / replication stall
+    (
+        [
+            "freeze-thaw", "freeze thaw", "eutectic",
+            "replication stall", "strand separation",
+            "kinetic trapping", "triplet trapping",
+        ],
+        "freeze_thaw",
+    ),
+    # Topology / small-world / mosaic / clustering / fault tolerance
+    (
+        [
+            "small-world", "small world", "watts-strogatz", "watts strogatz",
+            "clustering coefficient", "fault tolerance",
+            "topology comparison", "signal propagation latency",
+            "error cascade", "mosaic model",
+        ],
+        "mosaic",
+    ),
+    # State-space / eigenvalue / attractor / dynamical system
+    (
+        [
+            "eigenvalue", "state-space", "state space",
+            "attractor", "dynamical system", "dx/dt",
+            "stability analysis", "spectral gap",
+            "perturbation recovery trajectory",
+        ],
+        "state_space",
+    ),
+    # Delay encoding / DenRAM / phase encoding
+    (
+        [
+            "delay encoding", "phase encoding", "denram",
+            "phase-delay", "phase delay", "static attractor",
+            "cross-talk probability", "cross talk probability",
+            "oscillatory timing",
+        ],
+        "denram",
+    ),
+    # Heterogeneity / variability / disorder resilience
+    (
+        [
+            "heterogeneity", "heterogeneous substrate",
+            "vm_rest variance", "vmem variance",
+            "gap junction variance", "ion expression variability",
+            "natural disorder", "distributed resilience",
+            "attractor basin depth",
+        ],
+        "heterogeneity",
+    ),
+    # Homeostatic / BESS / scaling / adversarial recovery
+    (
+        [
+            "homeostatic", "homeostasis", "bess upgrade",
+            "scaling factor", "adversarial bias",
+            "adversarial recovery", "repeated perturbation",
+            "activity threshold",
+        ],
+        "homeostatic",
+    ),
+]
+
+
+def detect_computation_query(query: str) -> list[str]:
+    """Detect which reasoning engine computations the query requires.
+
+    Returns a list of computation module keys (e.g., ["ribozyme", "freeze_thaw"]).
+    """
+    lower = query.lower()
+    matched: list[str] = []
+    for patterns, module_key in _COMPUTATION_TRIGGERS:
+        for pattern in patterns:
+            if pattern in lower:
+                if module_key not in matched:
+                    matched.append(module_key)
+                break
+    return matched
+
+
+def _extract_query_params(query: str) -> dict:
+    """Extract numeric parameters from a query for computation customization.
+
+    Looks for patterns like:
+        fidelity of 94.1%, 72-day cycle, 99.9% integrity, etc.
+    """
+    import re as _re
+    params: dict = {}
+
+    # Fidelity
+    m = _re.search(r"fidelity\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*%", query, _re.IGNORECASE)
+    if m:
+        params["fidelity_per_nt"] = float(m.group(1)) / 100.0
+
+    # Copy cycle
+    m = _re.search(r"(\d+)\s*-?\s*day\s*(?:generation\s*)?(?:cycle|period)", query, _re.IGNORECASE)
+    if m:
+        params["copy_cycle_days"] = float(m.group(1))
+
+    # Data integrity / survival probability
+    m = _re.search(r"(\d+(?:\.\d+)?)\s*%\s*(?:data\s*)?(?:integrity|survival|stability)", query, _re.IGNORECASE)
+    if m:
+        params["target_survival_prob"] = float(m.group(1)) / 100.0
+
+    # Duration
+    m = _re.search(r"(?:for\s+)?(\d+)\s*(?:-?\s*)year", query, _re.IGNORECASE)
+    if m:
+        params["target_duration_days"] = float(m.group(1)) * 365.25
+
+    # Temperature
+    m = _re.search(r"(-?\d+(?:\.\d+)?)\s*°?\s*C", query)
+    if m:
+        params["freeze_temp_C"] = float(m.group(1))
+
+    # Node count
+    m = _re.search(r"(\d+)\s*(?:nodes?|cells?|clusters?)", query, _re.IGNORECASE)
+    if m:
+        params["n_nodes"] = int(m.group(1))
+
+    return params
+
+
+def run_computation(modules: list[str], query: str) -> str:
+    """Run reasoning engine computations and return formatted context.
+
+    This is the computation analog of generate_fallback_context().
+    """
+    if not modules:
+        return ""
+
+    params = _extract_query_params(query)
+    lines: list[str] = [
+        "",
+        "═══════════════════════════════════════════════════════════════════════",
+        "REASONING ENGINE — PRE-COMPUTED RESULTS [SIMULATION-DERIVED]",
+        "═══════════════════════════════════════════════════════════════════════",
+        "",
+    ]
+
+    for module_key in modules:
+        try:
+            if module_key == "ribozyme":
+                lines.extend(_compute_ribozyme(params))
+            elif module_key == "freeze_thaw":
+                lines.extend(_compute_freeze_thaw(params))
+            elif module_key == "mosaic":
+                lines.extend(_compute_mosaic(params))
+            elif module_key == "state_space":
+                lines.extend(_compute_state_space(params))
+            elif module_key == "denram":
+                lines.extend(_compute_denram(params))
+            elif module_key == "heterogeneity":
+                lines.extend(_compute_heterogeneity(params))
+            elif module_key == "homeostatic":
+                lines.extend(_compute_homeostatic(params))
+        except Exception as exc:
+            lines.append(f"[COMPUTATION ERROR: {module_key}] {exc}")
+            lines.append("")
+
+    lines.append("═══════════════════════════════════════════════════════════════════════")
+    lines.append("USE these computed values directly. They are deterministic outputs from")
+    lines.append("the Acheron Reasoning Engine. Tag as [SIMULATION-DERIVED].")
+    lines.append("Present the ANSWER first, then show the derivation.")
+    lines.append("═══════════════════════════════════════════════════════════════════════")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def _compute_ribozyme(params: dict) -> list[str]:
+    """Run QT45 ribozyme computations."""
+    from acheron.reasoning.ribozyme import (
+        QT45Parameters,
+        analyze_qt45,
+        compute_redundancy_for_stability,
+        compute_error_correction_overhead,
+        compute_corruption_after_n_cycles,
+    )
+    import math
+
+    fidelity = params.get("fidelity_per_nt", 0.941)
+    cycle_days = params.get("copy_cycle_days", 72)
+    target_prob = params.get("target_survival_prob", 0.999)
+    duration_days = params.get("target_duration_days", 365.25)
+
+    qt_params = QT45Parameters(fidelity_per_nt=fidelity, copy_cycle_days=cycle_days)
+    redundancy = compute_redundancy_for_stability(qt_params, duration_days, target_prob)
+    ecc = compute_error_correction_overhead(qt_params)
+
+    n_cycles = math.ceil(duration_days / cycle_days)
+    corruption = compute_corruption_after_n_cycles(
+        n_cycles, qt_params, redundancy=max(1, redundancy.copies_needed),
+    )
+
+    lines = [
+        "COMPUTATION: QT45 RIBOZYME / BIO-RAID REDUNDANCY",
+        "─" * 60,
+        "",
+        "Input Parameters:",
+        f"  Strand length:           {qt_params.length_nt} nt",
+        f"  Fidelity per nucleotide: {qt_params.fidelity_per_nt}",
+        f"  Copy cycle:              {qt_params.copy_cycle_days} days",
+        f"  Yield per cycle:         {qt_params.yield_fraction * 100}%",
+        f"  Target duration:         {duration_days:.1f} days ({duration_days / 365.25:.1f} years)",
+        f"  Target survival P:       {target_prob}",
+        "",
+        "Derived Values:",
+        f"  Per-copy fidelity (full strand): {qt_params.per_copy_fidelity:.6f}",
+        f"  Per-copy error rate:             {qt_params.per_copy_error_rate:.6f}",
+        f"  Copy cycles in target period:    {redundancy.n_copy_cycles}",
+        f"  Copies per year:                 {qt_params.copies_per_year:.2f}",
+        "",
+        "RESULT — Redundancy Factor:",
+        f"  Copies required:           {redundancy.copies_needed}",
+        f"  Redundancy factor:         {redundancy.redundancy_factor}",
+        f"  Actual survival P:         {redundancy.survival_probability_actual}",
+        "",
+        "Error Correction Overhead:",
+        f"  Raw error rate per nt:     {ecc.raw_error_rate_per_nt}",
+        f"  Parity nucleotides:        {ecc.parity_nucleotides_needed} / {qt_params.length_nt} nt",
+        f"  Overhead fraction:         {ecc.overhead_fraction}",
+        f"  Effective payload:         {ecc.effective_payload_nt} nt",
+        f"  Correctable errors/copy:   {ecc.correctable_errors_per_copy}",
+        "",
+        f"Corruption after {n_cycles} cycles ({duration_days / 365.25:.1f} yr):",
+        f"  P(single copy corrupt):    {corruption.p_corruption_single_copy}",
+        f"  P(all copies corrupt):     {corruption.p_corruption_with_redundancy}",
+        f"  Expected intact copies:    {corruption.expected_intact_copies}",
+        "",
+        "Derivation:",
+        f"  P(perfect copy) = {fidelity}^{qt_params.length_nt} = {qt_params.per_copy_fidelity:.6f}",
+        f"  P(lineage survives {n_cycles} cycles) = {qt_params.per_copy_fidelity:.6f}^{n_cycles}"
+        f" = {qt_params.per_copy_fidelity ** n_cycles:.6e}",
+        f"  M copies needed: log({1 - target_prob}) / log(1 - P_survive) = {redundancy.copies_needed}",
+        "",
+    ]
+    return lines
+
+
+def _compute_freeze_thaw(params: dict) -> list[str]:
+    """Run freeze-thaw kinetic computations."""
+    from acheron.reasoning.freeze_thaw import (
+        FreezeThawParams,
+        analyze_freeze_thaw,
+    )
+
+    ft_params = FreezeThawParams()
+    if "freeze_temp_C" in params:
+        ft_params.freeze_temp_C = params["freeze_temp_C"]
+
+    result = analyze_freeze_thaw(ft_params)
+
+    lines = [
+        "COMPUTATION: FREEZE-THAW KINETICS",
+        "─" * 60,
+        "",
+        f"  Freeze temperature:          {ft_params.freeze_temp_C}°C",
+        f"  Thaw temperature:            {ft_params.thaw_temp_C}°C",
+        f"  Stall probability:           {result.stall_probability}",
+        f"  Strand separation @ freeze:  {result.strand_separation_at_freeze}",
+        f"  Strand separation @ thaw:    {result.strand_separation_at_thaw}",
+        f"  Concentration factor:        {result.concentration_factor}x",
+        f"  Optimal freeze duration:     {result.optimal_interval.optimal_freeze_hours} h",
+        f"  Optimal thaw duration:       {result.optimal_interval.optimal_thaw_hours} h",
+        f"  Optimal cycle:               {result.optimal_interval.optimal_cycle_hours} h",
+        f"  Replication efficiency:      {result.optimal_interval.replication_efficiency}",
+        f"  Triplet trapping P:          {result.triplet_trapping.trapping_probability:.6f}",
+        f"  Stalled triplets:            {result.triplet_trapping.stalled_triplets}/{result.triplet_trapping.n_triplets}",
+        "",
+    ]
+    return lines
+
+
+def _compute_mosaic(params: dict) -> list[str]:
+    """Run topology comparison computations."""
+    from acheron.reasoning.mosaic import compare_topologies
+
+    n = params.get("n_nodes", 100)
+    comp = compare_topologies(n_nodes=n, seed=42)
+
+    lines = [
+        f"COMPUTATION: TOPOLOGY COMPARISON ({n} nodes)",
+        "─" * 60,
+        "",
+    ]
+    for label, m in [
+        ("Ring Lattice", comp.ring_lattice),
+        ("Small World", comp.small_world),
+        ("Uniform Random", comp.uniform),
+    ]:
+        lines.append(f"  {label}:")
+        lines.append(f"    Clustering coefficient:     {m.clustering_coefficient}")
+        lines.append(f"    Avg path length:            {m.average_path_length}")
+        lines.append(f"    Signal latency:             {m.signal_propagation_latency_ms} ms")
+        lines.append(f"    Energy per route:           {m.energy_per_routing_event_J:.2e} J")
+        lines.append(f"    Error cascade P:            {m.error_cascade_probability}")
+        lines.append(f"    Fault tolerance:            {m.fault_tolerance_fraction}")
+        lines.append("")
+    return lines
+
+
+def _compute_state_space(params: dict) -> list[str]:
+    """Run state-space dynamical analysis."""
+    from acheron.reasoning.mosaic import build_small_world
+    from acheron.reasoning.state_space import analyze_state_space
+
+    n = params.get("n_nodes", 30)
+    graph = build_small_world(n, 4, seed=42)
+    result = analyze_state_space(graph)
+
+    lines = [
+        f"COMPUTATION: STATE-SPACE ANALYSIS ({n} nodes)",
+        "─" * 60,
+        "",
+        f"  Dimension:          {result.system_dimension}",
+        f"  Stable:             {result.stability.is_stable}",
+        f"  Dominant eigenvalue: {result.stability.dominant_eigenvalue}",
+        f"  Eigenvalues (top):  {result.stability.eigenvalues}",
+        f"  Spectral gap:       {result.stability.spectral_gap}",
+        f"  Convergence rate:   {result.stability.convergence_rate}",
+    ]
+    if result.attractors:
+        lines.append(f"  Attractors found:   {len(result.attractors)}")
+        lines.append(f"  Convergence steps:  {result.attractors[0].convergence_steps}")
+    if result.recovery:
+        lines.append(f"  Recovery steps:     {result.recovery.recovery_steps}")
+        lines.append(f"  Recovery converged: {result.recovery.converged}")
+    lines.append("")
+    return lines
+
+
+def _compute_denram(params: dict) -> list[str]:
+    """Run delay encoding analysis."""
+    from acheron.reasoning.denram import EncodingMode, analyze_delay_encoding
+
+    phase = analyze_delay_encoding(EncodingMode.PHASE_DELAY, seed=42)
+    static = analyze_delay_encoding(EncodingMode.STATIC_ATTRACTOR, seed=42)
+
+    lines = [
+        "COMPUTATION: DELAY ENCODING ANALYSIS",
+        "─" * 60,
+        "",
+        "  Phase-Delay Mode:",
+        f"    Stability score:         {phase.phase_stability_score}",
+        f"    Mean persistence:        {phase.mean_persistence_ms} ms",
+        f"    Noise tolerance:         {phase.noise_tolerance_mV} mV",
+        f"    Cross-talk P:            {phase.cross_talk_probability}",
+        f"    Min cluster separation:  {phase.min_cluster_separation_um} um",
+        "",
+        "  Static Attractor Mode:",
+        f"    Stability score:         {static.phase_stability_score}",
+        f"    Mean persistence:        {static.mean_persistence_ms} ms",
+        f"    Cross-talk P:            {static.cross_talk_probability}",
+        "",
+    ]
+    return lines
+
+
+def _compute_heterogeneity(params: dict) -> list[str]:
+    """Run heterogeneity comparison."""
+    from acheron.reasoning.heterogeneity import compare_substrates
+
+    n = params.get("n_nodes", 50)
+    comp = compare_substrates(n_nodes=n, seed=42)
+
+    lines = [
+        f"COMPUTATION: HETEROGENEITY COMPARISON ({n} nodes)",
+        "─" * 60,
+        "",
+        "  Uniform Substrate:",
+        f"    Recovery steps:    {comp.uniform_result.recovery_steps}",
+        f"    Recovery complete: {comp.uniform_result.recovery_complete}",
+        f"    Residual error:    {comp.uniform_result.residual_error_mV} mV",
+        f"    Basin depth:       {comp.uniform_basin_depth_mV} mV",
+        "",
+        "  Heterogeneous Substrate:",
+        f"    Recovery steps:    {comp.heterogeneous_result.recovery_steps}",
+        f"    Recovery complete: {comp.heterogeneous_result.recovery_complete}",
+        f"    Residual error:    {comp.heterogeneous_result.residual_error_mV} mV",
+        f"    Basin depth:       {comp.heterogeneous_basin_depth_mV} mV",
+        "",
+        f"  Conclusion: {comp.conclusion}",
+        "",
+    ]
+    return lines
+
+
+def _compute_homeostatic(params: dict) -> list[str]:
+    """Run homeostatic recovery simulations."""
+    from acheron.reasoning.mosaic import build_small_world
+    from acheron.reasoning.homeostatic import (
+        simulate_adversarial_recovery,
+        simulate_repeated_perturbation,
+    )
+
+    graph = build_small_world(50, 6, seed=42)
+    adv = simulate_adversarial_recovery(graph, bias_mV=30.0, seed=42)
+
+    graph2 = build_small_world(50, 6, seed=42)
+    rep = simulate_repeated_perturbation(graph2, n_perturbations=5, seed=42)
+
+    lines = [
+        "COMPUTATION: HOMEOSTATIC RECOVERY (50 nodes)",
+        "─" * 60,
+        "",
+        "  Adversarial Bias (30 mV):",
+        f"    Recovery steps:    {adv.recovery_steps}",
+        f"    Recovery complete: {adv.recovery_complete}",
+        f"    Final activity:    {adv.final_activity}",
+        f"    Total energy:      {adv.total_energy_J:.2e} J",
+        f"    Scaling events:    {adv.total_scaling_events}",
+        "",
+        "  Repeated Perturbation (5x):",
+        f"    Stability held:    {rep.stability_maintained}",
+        f"    Activity variance: {rep.activity_variance}",
+        f"    Total energy:      {rep.total_energy_J:.2e} J",
+        "",
+    ]
+    return lines
+
+
 LOGIC_HASH = """\
 ═══════════════════════════════════════════════════════════════════════
 ACHERON NEXUS — CANONICAL LOGIC HASH v1.0
@@ -1154,12 +1594,22 @@ NEVER say "UNKNOWN - needs measurement" without providing:
 - A bounded estimate for the target species
 - The specific experiment to measure it
 
+REASONING ENGINE COMPUTATION RULE (CRITICAL):
+When REASONING ENGINE — PRE-COMPUTED RESULTS appear in the context:
+1. These are deterministic outputs from the Acheron Reasoning Engine
+2. Present the computed ANSWER first on line 1, then show the derivation
+3. Tag all computed values as [SIMULATION-DERIVED]
+4. Use the computed results as primary evidence — they override absent literature
+5. Still cite the underlying model parameters and their evidence labels
+6. Generate at least ONE hypothesis about implications of the computed result
+
 RULES:
 - For YES/NO questions: Start with "VERDICT: YES" or "VERDICT: NO" or "VERDICT: CONDITIONAL"
 - For calculations: Start with "ANSWER: [value with units]"
 - For parameter requests: Start with "PARAMETER: [name]" and provide fallback table
-- Tag claims: [EVIDENCE], [INFERENCE], [SPECULATION], [BOUNDED-INFERENCE]
-- No invented numbers. Cite sources or use cross-species estimates with labels.
+- Tag claims: [EVIDENCE], [INFERENCE], [SPECULATION], [BOUNDED-INFERENCE], [SIMULATION-DERIVED]
+- No invented numbers. Cite sources, use cross-species estimates with labels, or use
+  Reasoning Engine computed values.
 
 OUTPUT FORMAT (keep it short):
 1. VERDICT: or ANSWER: or PARAMETER: (first line, mandatory)
@@ -1204,7 +1654,7 @@ def get_mode_query_template(mode: NexusMode, fast: bool = True, query: str = "")
     Args:
         mode: The NexusMode to get template for
         fast: If True, use lean templates for faster responses (default True)
-        query: The user's query (used for parameter fallback detection)
+        query: The user's query (used for parameter fallback and computation detection)
     """
     # Detect if this is a parameter query and generate fallback context
     fallback_context = ""
@@ -1213,12 +1663,22 @@ def get_mode_query_template(mode: NexusMode, fast: bool = True, query: str = "")
         if matched_params:
             fallback_context = generate_fallback_context(matched_params)
 
+    # Detect computable queries and run reasoning engine calculations
+    computation_context = ""
+    if query:
+        matched_computations = detect_computation_query(query)
+        if matched_computations:
+            computation_context = run_computation(matched_computations, query)
+
+    # Combined extra context (parameter fallback + computation results)
+    extra_context = fallback_context + computation_context
+
     if mode == NexusMode.DECISION:
         if fast:
-            if fallback_context:
+            if extra_context:
                 return FAST_QUERY_TEMPLATE.replace(
                     "Sources:\n{context}",
-                    "Sources:\n{context}\n" + fallback_context
+                    "Sources:\n{context}\n" + extra_context
                 )
             return FAST_QUERY_TEMPLATE
         base_template = """\
@@ -1227,7 +1687,7 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 === SOURCE PASSAGES ===
 {context}
 ========================
-""" + fallback_context + """
+""" + extra_context + """
 Decision query: {query}
 
 Issue a VERDICT first. Follow the exact output structure from your system \
@@ -1242,7 +1702,7 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 === SOURCE PASSAGES ===
 {context}
 ========================
-""" + fallback_context + """
+""" + extra_context + """
 Learning query: {query}
 
 Provide a technically accurate answer, then include the CONCEPTS FOR THE \
@@ -1261,7 +1721,7 @@ Retrieved source passages from the bioelectricity and biomedical research corpus
 === SOURCE PASSAGES ===
 {context}
 ========================
-""" + fallback_context + """
+""" + extra_context + """
 Research query: {query}
 
 Execute the full {mode_label} analysis using ALL the mandatory sections described \
