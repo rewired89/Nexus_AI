@@ -36,6 +36,17 @@ from .empirical import (
     EMPIRICAL_PARAMS,
     format_cross_species_table,
 )
+from .sensitivity import (
+    SensitivityReport,
+    run_sensitivity_analysis,
+    format_sensitivity_report,
+)
+from .falsification import (
+    FalsificationReport,
+    run_falsification_analysis,
+    format_falsification_report,
+    PredictionStatus,
+)
 from .denram import (
     DelayEncodingMetrics,
     EncodingMode,
@@ -338,6 +349,55 @@ MODELING_LAYERS: list[ModelingLayer] = [
         ],
         depends_on=["mosaic", "state_space"],
     ),
+    ModelingLayer(
+        layer_id="sensitivity",
+        name="Parameter Sensitivity Analysis",
+        section="Section 11",
+        module="acheron.reasoning.sensitivity",
+        description="Meta-layer that wraps existing computation functions with perturbed "
+                    "parameters to quantify modeling assumption sensitivity. Cross-model "
+                    "comparison (Watts-Strogatz vs Barabasi-Albert vs Erdos-Renyi). "
+                    "Identifies robust conclusions and assumptions at risk.",
+        variables_introduced=[
+            "SensitivityResult.sensitivity_index",
+            "SensitivityResult.robust (bool)",
+            "ModelComparisonResult.agreement (0-1)",
+            "ModelComparisonResult.dominant_model",
+            "SensitivityReport.high_sensitivity_params",
+            "SensitivityReport.assumptions_at_risk",
+        ],
+        simulation_ready=True,
+        missing_experimental_data=[
+            "Measured parameter ranges for gap junction conductance in vivo",
+            "Actual topology type of planarian tissue (WS vs BA vs ER)",
+        ],
+        depends_on=["mosaic", "state_space", "empirical"],
+    ),
+    ModelingLayer(
+        layer_id="falsification",
+        name="Falsification Prediction Registry",
+        section="Section 12",
+        module="acheron.reasoning.falsification",
+        description="Popper-style prediction registry with testable quantitative bounds. "
+                    "7 falsifiable predictions with kill conditions, experimental tests, "
+                    "and automated margin-of-safety evaluation. Reports overall model "
+                    "health (HEALTHY/CAUTION/CRITICAL).",
+        variables_introduced=[
+            "FalsifiablePrediction.computed_value",
+            "FalsifiablePrediction.margin",
+            "FalsifiablePrediction.status (alive/at_risk/falsified/untested)",
+            "FalsificationReport.overall_health",
+            "FalsificationReport.alive_count",
+            "FalsificationReport.falsified_count",
+        ],
+        simulation_ready=True,
+        missing_experimental_data=[
+            "Experimental validation of any prediction in the registry",
+            "In-vivo spectral gap measurement",
+            "Measured energy per routing event",
+        ],
+        depends_on=["mosaic", "state_space", "empirical", "sensitivity"],
+    ),
 ]
 
 
@@ -451,6 +511,8 @@ class ValidationReport:
     state_space: Optional[StateSpaceAnalysis] = None
     qt45: Optional[QT45Analysis] = None
     freeze_thaw: Optional[FreezeThawAnalysis] = None
+    sensitivity: Optional[SensitivityReport] = None
+    falsification: Optional[FalsificationReport] = None
 
 
 def generate_validation_report(run_simulations: bool = True, seed: int = 42) -> ValidationReport:
@@ -540,6 +602,12 @@ def _run_all_simulations(report: ValidationReport, seed: int = 42) -> None:
 
     # Section 8: Freeze-thaw
     report.freeze_thaw = analyze_freeze_thaw()
+
+    # Section 11: Sensitivity analysis
+    report.sensitivity = run_sensitivity_analysis(n_nodes=30, k_neighbors=4, seed=seed)
+
+    # Section 12: Falsification registry
+    report.falsification = run_falsification_analysis(n_nodes=30, k_neighbors=4, seed=seed)
 
 
 def format_report(report: ValidationReport) -> str:
@@ -744,6 +812,37 @@ def format_report(report: ValidationReport) -> str:
         lines.append(f"    Replication Efficiency: {ft.optimal_interval.replication_efficiency}")
         lines.append(f"    Triplet Trapping P: {ft.triplet_trapping.trapping_probability:.6f}")
         lines.append(f"    Stalled Triplets: {ft.triplet_trapping.stalled_triplets}/{ft.triplet_trapping.n_triplets}")
+        lines.append("")
+
+    if report.sensitivity:
+        lines.append("  F.10 Parameter Sensitivity Analysis (Section 11)")
+        for s in report.sensitivity.parameter_sensitivities:
+            status = "ROBUST" if s.robust else "HIGH SENSITIVITY"
+            lines.append(f"    {s.parameter_name} → {s.output_name}: "
+                        f"S={s.sensitivity_index} [{status}]")
+        if report.sensitivity.model_comparisons:
+            lines.append("    Cross-Model Comparison:")
+            for mc in report.sensitivity.model_comparisons:
+                lines.append(f"      {mc.metric_name}: WS={mc.watts_strogatz} "
+                            f"BA={mc.barabasi_albert} ER={mc.erdos_renyi} "
+                            f"(agreement={mc.agreement:.0%})")
+        lines.append("")
+
+    if report.falsification:
+        lines.append("  F.11 Falsification Registry (Section 12)")
+        lines.append(f"    Overall Health: {report.falsification.overall_health}")
+        lines.append(f"    Alive: {report.falsification.alive_count} | "
+                    f"At Risk: {report.falsification.at_risk_count} | "
+                    f"Falsified: {report.falsification.falsified_count}")
+        for pred in report.falsification.predictions:
+            icon = {
+                PredictionStatus.ALIVE: "+",
+                PredictionStatus.AT_RISK: "~",
+                PredictionStatus.FALSIFIED: "X",
+                PredictionStatus.UNTESTED: "?",
+            }[pred.status]
+            lines.append(f"    [{icon}] {pred.prediction_id}: "
+                        f"val={pred.computed_value:.4f} margin={pred.margin:.4f}")
         lines.append("")
 
     lines.append(sep)

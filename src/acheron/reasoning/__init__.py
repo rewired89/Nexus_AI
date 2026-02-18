@@ -21,6 +21,8 @@ Modules:
     freeze_thaw     Section 8: Freeze-thaw kinetic model
     validation      Section 9: Validation report generator
     empirical       Section 10: Empirical grounding layer (Payvand/Levin/cross-species)
+    sensitivity     Section 11: Parameter sensitivity analysis meta-layer
+    falsification   Section 12: Falsification prediction registry
 """
 
 from .substrate import (
@@ -40,6 +42,7 @@ from .mosaic import (
     analyze_spectral_properties,
     analyze_topology,
     build_ring_lattice,
+    build_scale_free,
     build_small_world,
     build_uniform_random,
     compare_topologies,
@@ -112,6 +115,22 @@ from .freeze_thaw import (
     FreezeThawParams,
     analyze_freeze_thaw,
 )
+from .sensitivity import (
+    ModelComparisonResult,
+    ParameterSweepPoint,
+    SensitivityReport,
+    SensitivityResult,
+    compare_topology_models,
+    format_sensitivity_report,
+    run_sensitivity_analysis,
+)
+from .falsification import (
+    FalsifiablePrediction,
+    FalsificationReport,
+    PredictionStatus,
+    format_falsification_report,
+    run_falsification_analysis,
+)
 from .validation import (
     ValidationReport,
     format_report,
@@ -136,6 +155,7 @@ __all__ = [
     "analyze_spectral_properties",
     "analyze_topology",
     "build_ring_lattice",
+    "build_scale_free",
     "build_small_world",
     "build_uniform_random",
     "compare_topologies",
@@ -200,6 +220,20 @@ __all__ = [
     "FreezeThawAnalysis",
     "FreezeThawParams",
     "analyze_freeze_thaw",
+    # Sensitivity (S11)
+    "ModelComparisonResult",
+    "ParameterSweepPoint",
+    "SensitivityReport",
+    "SensitivityResult",
+    "compare_topology_models",
+    "format_sensitivity_report",
+    "run_sensitivity_analysis",
+    # Falsification (S12)
+    "FalsifiablePrediction",
+    "FalsificationReport",
+    "PredictionStatus",
+    "format_falsification_report",
+    "run_falsification_analysis",
     # Validation (S9)
     "ValidationReport",
     "format_report",

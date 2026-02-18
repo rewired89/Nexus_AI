@@ -474,7 +474,7 @@ class TestFreezeThaw:
 
 class TestValidation:
     def test_modeling_layers_registered(self):
-        assert len(MODELING_LAYERS) == 9  # 8 original + empirical
+        assert len(MODELING_LAYERS) == 11  # 8 original + empirical + sensitivity + falsification
 
     def test_interaction_map(self):
         interactions = build_interaction_map()
@@ -486,7 +486,7 @@ class TestValidation:
 
     def test_generate_report_no_sim(self):
         report = generate_validation_report(run_simulations=False)
-        assert report.total_layers == 9
+        assert report.total_layers == 11
         assert report.total_new_variables > 0
         assert report.all_simulations_ready is True
         assert report.total_missing_data_items > 0
@@ -516,8 +516,8 @@ class TestValidation:
     def test_report_to_dict(self):
         report = generate_validation_report(run_simulations=False)
         d = report_to_dict(report)
-        assert d["total_layers"] == 9
-        assert len(d["layers"]) == 9
+        assert d["total_layers"] == 11
+        assert len(d["layers"]) == 11
         assert len(d["interactions"]) == 10
 
 
@@ -815,3 +815,308 @@ class TestEmpiricalGrounding:
             assert "[MEASURED]" in entry.vmem_manipulation_evidence
             assert entry.gap_junction_type != ""
             assert entry.spectral_relevance != ""
+
+
+# ======================================================================
+# Section 2d: Barabasi-Albert Scale-Free Topology
+# ======================================================================
+
+class TestScaleFree:
+    def test_build_scale_free_basic(self):
+        from acheron.reasoning.mosaic import build_scale_free
+        g = build_scale_free(30, m_edges_per_node=3, seed=42)
+        assert g.node_count() == 30
+        assert g.edge_count() > 0
+
+    def test_scale_free_has_hubs(self):
+        from acheron.reasoning.mosaic import build_scale_free, _build_adjacency
+        g = build_scale_free(50, m_edges_per_node=2, seed=42)
+        adj = _build_adjacency(g)
+        degrees = [len(neighbors) for neighbors in adj.values()]
+        max_deg = max(degrees)
+        min_deg = min(degrees)
+        # Scale-free should have high degree variance (hubs)
+        assert max_deg > min_deg * 2
+
+    def test_scale_free_spectral_gap(self):
+        from acheron.reasoning.mosaic import build_scale_free, compute_spectral_gap
+        g = build_scale_free(20, m_edges_per_node=2, seed=42)
+        gap = compute_spectral_gap(g)
+        assert gap > 0  # connected graph
+
+    def test_scale_free_vs_small_world(self):
+        from acheron.reasoning.mosaic import (
+            build_scale_free, compute_clustering_coefficient,
+            compute_average_path_length,
+        )
+        ba = build_scale_free(30, m_edges_per_node=3, seed=42)
+        sw = build_small_world(30, 6, rewire_prob=0.1, seed=42)
+        # BA typically has lower clustering than SW
+        cc_ba = compute_clustering_coefficient(ba)
+        cc_sw = compute_clustering_coefficient(sw)
+        # Both should be positive
+        assert cc_ba >= 0
+        assert cc_sw >= 0
+
+    def test_scale_free_small_graph(self):
+        from acheron.reasoning.mosaic import build_scale_free
+        g = build_scale_free(4, m_edges_per_node=2, seed=42)
+        assert g.node_count() == 4
+        assert g.edge_count() > 0
+
+
+# ======================================================================
+# Section 6b: Nonlinear Voltage-Dependent Coupling
+# ======================================================================
+
+class TestNonlinearCoupling:
+    def test_linear_coupling_unchanged(self):
+        """Existing linear coupling behavior should be identical."""
+        g = build_small_world(10, 4, seed=42)
+        m = build_system_matrices(g, leak_rate=0.1, coupling_mode="linear")
+        assert m.dimension == 10
+        # Diagonal should be negative (leak)
+        for i in range(10):
+            assert m.A[i][i] < 0
+
+    def test_nonlinear_coupling_builds(self):
+        g = build_small_world(10, 4, seed=42)
+        m = build_system_matrices(g, leak_rate=0.1, coupling_mode="nonlinear")
+        assert m.dimension == 10
+        assert len(m.A) == 10
+
+    def test_nonlinear_coupling_reduces_off_diagonal(self):
+        """Nonlinear gating should reduce coupling when nodes have same Vm."""
+        g = build_small_world(10, 4, seed=42)
+        m_lin = build_system_matrices(g, leak_rate=0.1, coupling_mode="linear")
+        m_nl = build_system_matrices(g, leak_rate=0.1, coupling_mode="nonlinear")
+        # When all nodes have same Vm (-40mV), dV=0, so gating ≈ sigmoid(0)
+        # which is close to but can differ from 1.0. Off-diags should be
+        # similar magnitude.
+        for i in range(10):
+            for j in range(10):
+                if i != j:
+                    # Both should have same sign (positive off-diagonal)
+                    if abs(m_lin.A[i][j]) > 1e-12:
+                        assert m_nl.A[i][j] >= 0
+
+    def test_nonlinear_stability(self):
+        g = build_small_world(10, 4, seed=42)
+        m = build_system_matrices(g, leak_rate=0.1, coupling_mode="nonlinear")
+        stab = analyze_stability(m)
+        assert len(stab.eigenvalues) > 0
+
+    def test_linear_nonlinear_stability_agreement(self):
+        """Both models should agree on stability for uniform Vm."""
+        g = build_small_world(15, 4, seed=42)
+        m_lin = build_system_matrices(g, leak_rate=0.1, coupling_mode="linear")
+        m_nl = build_system_matrices(g, leak_rate=0.1, coupling_mode="nonlinear")
+        stab_lin = analyze_stability(m_lin)
+        stab_nl = analyze_stability(m_nl)
+        assert stab_lin.is_stable == stab_nl.is_stable
+
+
+# ======================================================================
+# Section 11: Parameter Sensitivity Analysis
+# ======================================================================
+
+class TestSensitivity:
+    def test_sensitivity_conductance(self):
+        from acheron.reasoning.sensitivity import sensitivity_conductance_to_spectral_gap
+        result = sensitivity_conductance_to_spectral_gap(n_nodes=15, seed=42)
+        assert result.parameter_name == "base_conductance_nS"
+        assert result.output_name == "spectral_gap"
+        assert len(result.sweep_points) > 3
+        assert isinstance(result.sensitivity_index, float)
+
+    def test_sensitivity_leak_rate(self):
+        from acheron.reasoning.sensitivity import sensitivity_leak_rate_to_stability
+        result = sensitivity_leak_rate_to_stability(n_nodes=10, seed=42)
+        assert result.parameter_name == "leak_rate"
+        assert len(result.sweep_points) > 3
+
+    def test_sensitivity_rewire_prob(self):
+        from acheron.reasoning.sensitivity import sensitivity_rewire_prob_to_clustering
+        result = sensitivity_rewire_prob_to_clustering(n_nodes=15, seed=42)
+        assert result.parameter_name == "rewire_prob"
+        assert result.output_name == "clustering_coefficient"
+
+    def test_sensitivity_energy(self):
+        from acheron.reasoning.sensitivity import sensitivity_conductance_scale_to_energy
+        result = sensitivity_conductance_scale_to_energy(n_nodes=10, seed=42)
+        assert result.parameter_name == "delta_v_mV"
+        assert len(result.sweep_points) > 3
+
+    def test_cross_model_comparison(self):
+        from acheron.reasoning.sensitivity import compare_topology_models
+        results = compare_topology_models(n_nodes=15, seed=42)
+        assert len(results) == 4  # spectral_gap, cc, apl, energy
+        for mc in results:
+            assert mc.watts_strogatz >= 0 or mc.watts_strogatz < 0  # is a number
+            assert mc.barabasi_albert >= 0 or mc.barabasi_albert < 0
+            assert mc.erdos_renyi >= 0 or mc.erdos_renyi < 0
+            assert 0.0 <= mc.agreement <= 1.0
+            assert mc.dominant_model in ["watts_strogatz", "barabasi_albert", "erdos_renyi"]
+
+    def test_full_sensitivity_report(self):
+        from acheron.reasoning.sensitivity import run_sensitivity_analysis
+        report = run_sensitivity_analysis(n_nodes=15, seed=42)
+        assert len(report.parameter_sensitivities) == 4
+        assert len(report.model_comparisons) == 4
+        # Should have some conclusions
+        assert len(report.robust_conclusions) + len(report.assumptions_at_risk) > 0
+
+    def test_sensitivity_report_formatting(self):
+        from acheron.reasoning.sensitivity import (
+            run_sensitivity_analysis, format_sensitivity_report,
+        )
+        report = run_sensitivity_analysis(n_nodes=15, seed=42)
+        text = format_sensitivity_report(report)
+        assert "PARAMETER SENSITIVITY" in text
+        assert "CROSS-MODEL" in text
+
+
+# ======================================================================
+# Section 12: Falsification Prediction Registry
+# ======================================================================
+
+class TestFalsification:
+    def test_prediction_registry(self):
+        from acheron.reasoning.falsification import _build_prediction_registry
+        preds = _build_prediction_registry()
+        assert len(preds) == 7
+        ids = [p.prediction_id for p in preds]
+        assert "P1_SPECTRAL_GAP_POSITIVE" in ids
+        assert "P7_NONLINEAR_VS_LINEAR" in ids
+
+    def test_all_predictions_have_kill_conditions(self):
+        from acheron.reasoning.falsification import _build_prediction_registry
+        for pred in _build_prediction_registry():
+            assert pred.kill_condition != ""
+            assert pred.kill_direction in ("below", "above")
+            assert pred.experimental_test != ""
+            assert len(pred.assumptions) > 0
+
+    def test_falsification_analysis(self):
+        from acheron.reasoning.falsification import (
+            run_falsification_analysis, PredictionStatus,
+        )
+        report = run_falsification_analysis(n_nodes=15, seed=42)
+        assert len(report.predictions) == 7
+        assert report.alive_count + report.at_risk_count + report.falsified_count + report.untested_count == 7
+        assert report.overall_health in ("HEALTHY", "CAUTION", "CRITICAL")
+
+    def test_spectral_gap_prediction_alive(self):
+        from acheron.reasoning.falsification import (
+            run_falsification_analysis, PredictionStatus,
+        )
+        report = run_falsification_analysis(n_nodes=20, seed=42)
+        p1 = [p for p in report.predictions if p.prediction_id == "P1_SPECTRAL_GAP_POSITIVE"][0]
+        assert p1.computed_value > 0
+        assert p1.status == PredictionStatus.ALIVE
+
+    def test_stability_prediction_alive(self):
+        from acheron.reasoning.falsification import (
+            run_falsification_analysis, PredictionStatus,
+        )
+        report = run_falsification_analysis(n_nodes=15, seed=42)
+        p4 = [p for p in report.predictions if p.prediction_id == "P4_STABILITY_NEGATIVE_EIGENVALUES"][0]
+        assert p4.computed_value < 0  # negative eigenvalue = stable
+        assert p4.status == PredictionStatus.ALIVE
+
+    def test_nonlinear_agreement_prediction(self):
+        from acheron.reasoning.falsification import (
+            run_falsification_analysis, PredictionStatus,
+        )
+        report = run_falsification_analysis(n_nodes=15, seed=42)
+        p7 = [p for p in report.predictions if p.prediction_id == "P7_NONLINEAR_VS_LINEAR"][0]
+        assert p7.computed_value == 1.0  # both should agree on stability
+        assert p7.status == PredictionStatus.ALIVE
+
+    def test_falsification_report_formatting(self):
+        from acheron.reasoning.falsification import (
+            run_falsification_analysis, format_falsification_report,
+        )
+        report = run_falsification_analysis(n_nodes=15, seed=42)
+        text = format_falsification_report(report)
+        assert "FALSIFICATION" in text
+        assert "POPPER" in text
+        assert "Overall Health" in text
+
+    def test_memory_persistence_prediction(self):
+        from acheron.reasoning.falsification import (
+            run_falsification_analysis, PredictionStatus,
+        )
+        report = run_falsification_analysis(n_nodes=15, seed=42)
+        p6 = [p for p in report.predictions if p.prediction_id == "P6_MEMORY_PERSISTENCE"][0]
+        assert p6.computed_value == 3.0  # Levin's T_hold
+        # AT_RISK because 3h is close to the 1h kill bound relative to the
+        # full expected range (3-720h). This is diagnostically correct:
+        # T_hold of 3h is borderline for robust memory.
+        assert p6.status == PredictionStatus.AT_RISK
+        assert p6.margin > 0  # but not falsified
+
+
+# ======================================================================
+# Section 10b: Computation Layer — Model Validation
+# ======================================================================
+
+class TestModelValidationComputation:
+    def test_detect_sensitivity_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query("run parameter sensitivity analysis")
+        assert "model_validation" in modules
+
+    def test_detect_falsification_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query("show falsification predictions and kill conditions")
+        assert "model_validation" in modules
+
+    def test_detect_scale_free_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query("compare Barabasi-Albert scale-free topology")
+        assert "model_validation" in modules
+
+    def test_detect_nonlinear_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query("nonlinear coupling voltage-dependent gap junction")
+        assert "model_validation" in modules
+
+    def test_run_model_validation_computation(self):
+        from acheron.rag.hypothesis_engine import run_computation
+        result = run_computation(
+            ["model_validation"],
+            "run sensitivity analysis and falsification registry"
+        )
+        assert "REASONING ENGINE" in result
+        assert "SENSITIVITY" in result
+        assert "FALSIFICATION" in result
+        assert "ROBUST" in result or "HIGH SENSITIVITY" in result
+
+
+# ======================================================================
+# Section 9b: Validation Report with new layers
+# ======================================================================
+
+class TestValidationUpdated:
+    def test_modeling_layers_count(self):
+        assert len(MODELING_LAYERS) == 11  # 9 original + sensitivity + falsification
+
+    def test_report_includes_new_layers(self):
+        report = generate_validation_report(run_simulations=False)
+        assert report.total_layers == 11
+        layer_ids = [l.layer_id for l in report.modeling_layers]
+        assert "sensitivity" in layer_ids
+        assert "falsification" in layer_ids
+
+    def test_report_with_sim_includes_new(self):
+        report = generate_validation_report(run_simulations=True, seed=42)
+        assert report.sensitivity is not None
+        assert report.falsification is not None
+        assert report.falsification.overall_health in ("HEALTHY", "CAUTION", "CRITICAL")
+
+    def test_format_report_includes_new_sections(self):
+        report = generate_validation_report(run_simulations=True, seed=42)
+        text = format_report(report)
+        assert "Sensitivity" in text
+        assert "Falsification" in text

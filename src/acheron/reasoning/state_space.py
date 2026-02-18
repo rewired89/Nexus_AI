@@ -71,11 +71,21 @@ def build_system_matrices(
     graph: SubstrateGraph,
     leak_rate: float = 0.1,
     conductance_scale: float = 0.01,
+    coupling_mode: str = "linear",
 ) -> SystemMatrices:
     """Build state-space matrices A and B from substrate graph.
 
     A[i][i] = -leak_rate (self-decay toward rest)
     A[i][j] = conductance_scale * G_ij (coupling from node j)
+
+    coupling_mode:
+        "linear"    — standard Laplacian coupling (default, backwards-compatible)
+        "nonlinear" — voltage-dependent conductance:
+                      G_eff = G * sigmoid(|Vm_i - Vm_j| / V_half)
+                      where V_half = 30 mV. Models real gap junction
+                      voltage gating (Innexin channels close at high
+                      transjunctional voltage). Stored in A as linearized
+                      coupling at current operating point.
 
     B = identity (each node can receive independent external input).
     """
@@ -91,7 +101,20 @@ def build_system_matrices(
         si = idx_map.get(edge.source)
         ti = idx_map.get(edge.target)
         if si is not None and ti is not None:
-            coupling = conductance_scale * edge.conductance_nS
+            base_coupling = conductance_scale * edge.conductance_nS
+
+            if coupling_mode == "nonlinear":
+                # Voltage-dependent gap junction gating
+                vm_i = graph.nodes[edge.source].vm_mV
+                vm_j = graph.nodes[edge.target].vm_mV
+                v_half = 30.0  # mV — half-inactivation voltage
+                dv = abs(vm_i - vm_j)
+                # Boltzmann sigmoid: at dv=0 → 1.0, at dv>>v_half → ~0
+                gating = 1.0 / (1.0 + math.exp((dv - v_half) / (v_half * 0.3)))
+                coupling = base_coupling * gating
+            else:
+                coupling = base_coupling
+
             A[si][ti] += coupling
             A[ti][si] += coupling
 

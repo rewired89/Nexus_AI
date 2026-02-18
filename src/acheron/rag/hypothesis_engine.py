@@ -1174,6 +1174,20 @@ _COMPUTATION_TRIGGERS: list[tuple[list[str], str]] = [
         ],
         "homeostatic",
     ),
+    # Model validation / sensitivity / falsification / competing models
+    (
+        [
+            "sensitivity analysis", "parameter sensitivity",
+            "model validation", "model comparison",
+            "falsification", "falsifiable", "kill condition",
+            "competing model", "scale-free", "scale free",
+            "barabasi", "barabási", "preferential attachment",
+            "nonlinear coupling", "voltage-dependent",
+            "assumption", "assumptions at risk",
+            "robust conclusion",
+        ],
+        "model_validation",
+    ),
 ]
 
 
@@ -1277,6 +1291,8 @@ def run_computation(modules: list[str], query: str) -> str:
                 lines.extend(_compute_heterogeneity(params))
             elif module_key == "homeostatic":
                 lines.extend(_compute_homeostatic(params))
+            elif module_key == "model_validation":
+                lines.extend(_compute_model_validation(params))
         except Exception as exc:
             lines.append(f"[COMPUTATION ERROR: {module_key}] {exc}")
             lines.append("")
@@ -1702,6 +1718,86 @@ def _compute_homeostatic(params: dict) -> list[str]:
         f"    Total energy:      {rep.total_energy_J:.2e} J",
         "",
     ]
+    return lines
+
+
+def _compute_model_validation(params: dict) -> list[str]:
+    """Run sensitivity analysis + falsification registry."""
+    from acheron.reasoning.sensitivity import (
+        run_sensitivity_analysis,
+        compare_topology_models,
+    )
+    from acheron.reasoning.falsification import (
+        run_falsification_analysis,
+        PredictionStatus,
+    )
+
+    n_nodes = params.get("n_nodes", 30)
+    k_neighbors = params.get("k_neighbors", 4)
+    seed = params.get("seed", 42)
+
+    # Sensitivity analysis
+    sens = run_sensitivity_analysis(n_nodes, k_neighbors, seed=seed)
+
+    # Falsification registry
+    fals = run_falsification_analysis(n_nodes, k_neighbors, seed=seed)
+
+    # Cross-model comparison
+    comparisons = compare_topology_models(n_nodes, k_neighbors, seed=seed)
+
+    lines = [
+        "COMPUTATION: MODEL VALIDATION META-LAYER",
+        "─" * 60,
+        "",
+        "  ┌─ PARAMETER SENSITIVITY ANALYSIS ─┐",
+        "",
+    ]
+
+    for s in sens.parameter_sensitivities:
+        status = "ROBUST" if s.robust else "HIGH SENSITIVITY"
+        lines.append(f"    {s.parameter_name} → {s.output_name}: "
+                     f"S={s.sensitivity_index} [{status}]")
+    lines.append("")
+
+    lines.append("  ┌─ CROSS-MODEL TOPOLOGY COMPARISON ─┐")
+    lines.append("")
+    for mc in comparisons:
+        lines.append(f"    {mc.metric_name}:")
+        lines.append(f"      WS={mc.watts_strogatz}  BA={mc.barabasi_albert}  "
+                     f"ER={mc.erdos_renyi}")
+        lines.append(f"      Agreement: {mc.agreement:.0%}  Dominant: {mc.dominant_model}")
+    lines.append("")
+
+    lines.append("  ┌─ FALSIFICATION PREDICTION REGISTRY ─┐")
+    lines.append(f"    Overall: {fals.overall_health} "
+                 f"({fals.alive_count} alive, {fals.at_risk_count} at risk, "
+                 f"{fals.falsified_count} falsified)")
+    lines.append("")
+
+    for pred in fals.predictions:
+        icon = {
+            PredictionStatus.ALIVE: "+",
+            PredictionStatus.AT_RISK: "~",
+            PredictionStatus.FALSIFIED: "X",
+            PredictionStatus.UNTESTED: "?",
+        }[pred.status]
+        lines.append(f"    [{icon}] {pred.prediction_id}: "
+                     f"computed={pred.computed_value:.4f} "
+                     f"margin={pred.margin:.4f} [{pred.status.value}]")
+    lines.append("")
+
+    if sens.robust_conclusions:
+        lines.append("  ┌─ ROBUST CONCLUSIONS ─┐")
+        for c in sens.robust_conclusions:
+            lines.append(f"    + {c}")
+        lines.append("")
+
+    if sens.assumptions_at_risk:
+        lines.append("  ┌─ ASSUMPTIONS AT RISK ─┐")
+        for a in sens.assumptions_at_risk:
+            lines.append(f"    ! {a}")
+        lines.append("")
+
     return lines
 
 

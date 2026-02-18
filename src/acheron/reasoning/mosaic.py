@@ -12,6 +12,7 @@ Simulation capabilities:
     - Uniform topology vs small-world topology comparison
     - Graph Laplacian spectral analysis (algebraic connectivity / Fiedler value)
     - Energy-optimized edge rewiring (maximize spectral gap, minimize dissipation)
+    - Barabasi-Albert scale-free topology for competing model comparison
 
 Output metrics:
     - Signal propagation latency
@@ -105,6 +106,94 @@ def build_small_world(
             kept_edges.append(edge)
 
     graph.edges = kept_edges + rewired_edges
+    return graph
+
+
+def build_scale_free(
+    n_nodes: int,
+    m_edges_per_node: int = 3,
+    base_conductance_nS: float = 2.0,
+    diffusion_delay_ms: float = 1.0,
+    seed: Optional[int] = None,
+) -> SubstrateGraph:
+    """Build a Barabasi-Albert scale-free graph for comparison.
+
+    Preferential attachment model: new nodes connect to m existing nodes
+    with probability proportional to their degree.  Scale-free networks
+    have hub-heavy degree distributions (power-law) vs Watts-Strogatz
+    small-world (peaked degree distribution).
+
+    Biological relevance: tests whether bioelectric tissue connectivity
+    is better modeled by hub-dominated or uniform-degree topology.
+    """
+    if seed is not None:
+        random.seed(seed)
+
+    graph = SubstrateGraph()
+    # Seed with a complete graph of m+1 nodes
+    m = max(1, m_edges_per_node)
+    seed_size = m + 1
+    for i in range(min(seed_size, n_nodes)):
+        graph.nodes[f"c{i}"] = SubstrateNode(
+            node_id=f"c{i}", vm_mV=-40.0, vm_rest_mV=-40.0,
+        )
+
+    # Connect seed nodes fully
+    degree: list[int] = [0] * n_nodes
+    for i in range(min(seed_size, n_nodes)):
+        for j in range(i + 1, min(seed_size, n_nodes)):
+            graph.edges.append(SubstrateEdge(
+                source=f"c{i}", target=f"c{j}",
+                conductance_nS=base_conductance_nS,
+                diffusion_delay_ms=diffusion_delay_ms,
+            ))
+            degree[i] += 1
+            degree[j] += 1
+
+    if n_nodes <= seed_size:
+        return graph
+
+    # Preferential attachment for remaining nodes
+    for i in range(seed_size, n_nodes):
+        graph.nodes[f"c{i}"] = SubstrateNode(
+            node_id=f"c{i}", vm_mV=-40.0, vm_rest_mV=-40.0,
+        )
+        # Build cumulative degree distribution for existing nodes
+        existing = list(range(i))
+        total_degree = sum(degree[k] for k in existing)
+        if total_degree == 0:
+            total_degree = len(existing)
+            weights = [1.0] * len(existing)
+        else:
+            weights = [degree[k] for k in existing]
+
+        # Select m targets by weighted sampling without replacement
+        targets: set[int] = set()
+        w = list(weights)
+        for _ in range(min(m, len(existing))):
+            w_sum = sum(w)
+            if w_sum <= 0:
+                break
+            r = random.random() * w_sum
+            cumulative = 0.0
+            chosen = existing[0]
+            for idx_pos, idx_node in enumerate(existing):
+                cumulative += w[idx_pos]
+                if cumulative >= r:
+                    chosen = idx_node
+                    w[idx_pos] = 0.0  # prevent re-selection
+                    break
+            targets.add(chosen)
+
+        for t in targets:
+            graph.edges.append(SubstrateEdge(
+                source=f"c{i}", target=f"c{t}",
+                conductance_nS=base_conductance_nS,
+                diffusion_delay_ms=diffusion_delay_ms,
+            ))
+            degree[i] += 1
+            degree[t] += 1
+
     return graph
 
 
