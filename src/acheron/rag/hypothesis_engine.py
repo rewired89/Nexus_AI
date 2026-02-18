@@ -1121,12 +1121,24 @@ _COMPUTATION_TRIGGERS: list[tuple[list[str], str]] = [
         ],
         "mosaic",
     ),
+    # Spectral analysis / edge-rewiring / Payvand Mosaic / energy optimization
+    (
+        [
+            "spectral gap", "spectral", "edge-rewiring", "edge rewiring",
+            "rewiring", "laplacian", "algebraic connectivity",
+            "fiedler", "energy dissipation", "energy-delay",
+            "in-memory routing", "mosaic architecture", "payvand",
+            "connectivity matrix", "regenerative signal propagation",
+            "cross-species", "cross species",
+        ],
+        "spectral_rewiring",
+    ),
     # State-space / eigenvalue / attractor / dynamical system
     (
         [
             "eigenvalue", "state-space", "state space",
             "attractor", "dynamical system", "dx/dt",
-            "stability analysis", "spectral gap",
+            "stability analysis",
             "perturbation recovery trajectory",
         ],
         "state_space",
@@ -1220,6 +1232,13 @@ def _extract_query_params(query: str) -> dict:
     if m:
         params["n_nodes"] = int(m.group(1))
 
+    # Rewire budget
+    m = _re.search(r"(\d+)\s*(?:rewir|edge)", query, _re.IGNORECASE)
+    if m:
+        val = int(m.group(1))
+        if val <= 50:  # sanity check — it's a budget, not a node count
+            params["rewire_budget"] = val
+
     return params
 
 
@@ -1248,6 +1267,8 @@ def run_computation(modules: list[str], query: str) -> str:
                 lines.extend(_compute_freeze_thaw(params))
             elif module_key == "mosaic":
                 lines.extend(_compute_mosaic(params))
+            elif module_key == "spectral_rewiring":
+                lines.extend(_compute_spectral_rewiring(params))
             elif module_key == "state_space":
                 lines.extend(_compute_state_space(params))
             elif module_key == "denram":
@@ -1399,6 +1420,168 @@ def _compute_mosaic(params: dict) -> list[str]:
         lines.append(f"    Error cascade P:            {m.error_cascade_probability}")
         lines.append(f"    Fault tolerance:            {m.fault_tolerance_fraction}")
         lines.append("")
+    return lines
+
+
+def _compute_spectral_rewiring(params: dict) -> list[str]:
+    """Run spectral gap analysis + energy-optimized edge rewiring.
+
+    Implements the Payvand Mosaic in-memory routing principle:
+    - Compute graph Laplacian spectral gap (algebraic connectivity)
+    - Find optimal edge rewirings that maximize spectral gap / energy ratio
+    - Provide cross-species empirical grounding
+    - Apply spectral threshold hypothesis model
+    """
+    from acheron.reasoning.mosaic import (
+        build_small_world,
+        analyze_spectral_properties,
+        find_optimal_rewires,
+        rewire_sweep,
+    )
+    from acheron.reasoning.empirical import (
+        MOSAIC_SPEC,
+        LEVIN_SPEC,
+        SPECTRAL_THRESHOLD,
+        EMPIRICAL_PARAMS,
+        get_empirical_context,
+        format_cross_species_table,
+    )
+
+    n = params.get("n_nodes", 50)
+    k = 6
+    rewire_budget = params.get("rewire_budget", 5)
+
+    # Build baseline small-world graph
+    graph = build_small_world(n, k, rewire_prob=0.1, seed=42)
+
+    # Spectral analysis
+    spectral = analyze_spectral_properties(graph)
+
+    # Energy-optimized rewiring
+    rewire = find_optimal_rewires(graph, rewire_budget=rewire_budget, seed=42)
+
+    # Beta sweep
+    sweep = rewire_sweep(n_nodes=min(n, 30), k_neighbors=k, seed=42)
+
+    # Spectral threshold assessment
+    stall_risk = SPECTRAL_THRESHOLD.is_stall_risk(spectral.spectral_gap)
+    is_optimal = SPECTRAL_THRESHOLD.is_optimal(spectral.spectral_gap)
+    ed_cost = SPECTRAL_THRESHOLD.energy_delay_cost(
+        spectral.total_network_energy_J, spectral.spectral_gap,
+    )
+
+    lines = [
+        f"COMPUTATION: SPECTRAL ANALYSIS + ENERGY-OPTIMIZED REWIRING ({n} nodes)",
+        "─" * 60,
+        "",
+        "BASELINE SPECTRAL PROPERTIES:",
+        f"  Spectral gap (lambda_2):      {spectral.spectral_gap}",
+        f"  Laplacian eigenvalues (first): {spectral.laplacian_eigenvalues[:6]}",
+        f"  Total network energy:          {spectral.total_network_energy_J:.4e} J",
+        f"  Energy per edge:               {spectral.energy_per_edge_J:.4e} J",
+        f"  Spectral efficiency:           {spectral.spectral_efficiency} (gap/energy)",
+        "",
+        "SPECTRAL THRESHOLD ASSESSMENT:",
+        f"  Target lambda_2:               {SPECTRAL_THRESHOLD.theta_optimal} [BOUNDED-INFERENCE]",
+        f"  Critical threshold:            {SPECTRAL_THRESHOLD.theta_critical}",
+        f"  Current status:                {'OPTIMAL' if is_optimal else 'STALL RISK' if stall_risk else 'SUB-OPTIMAL'}",
+        f"  Energy-Delay product:          {ed_cost:.6e}",
+        "",
+    ]
+
+    # Rewiring results
+    lines.extend([
+        "ENERGY-OPTIMIZED EDGE REWIRING (Payvand Mosaic Principle):",
+        f"  Rewire budget:                 {rewire.rewire_budget} edges",
+        f"  Candidates evaluated:          {len(rewire.candidates)}",
+        f"  Beneficial rewires found:      {len(rewire.optimal_rewires)}",
+        "",
+        f"  Baseline spectral gap:         {rewire.baseline_spectral_gap}",
+        f"  Optimized spectral gap:        {rewire.optimized_spectral_gap}",
+        f"  Gap improvement:               +{rewire.gap_improvement_pct}%",
+        "",
+        f"  Baseline energy:               {rewire.baseline_total_energy_J:.4e} J",
+        f"  Optimized energy:              {rewire.optimized_total_energy_J:.4e} J",
+        f"  Energy reduction:              {rewire.energy_reduction_pct}%",
+        "",
+        f"  Baseline efficiency:           {rewire.baseline_spectral_efficiency}",
+        f"  Optimized efficiency:          {rewire.optimized_spectral_efficiency}",
+        "",
+    ])
+
+    if rewire.optimal_rewires:
+        lines.append("  OPTIMAL REWIRING EVENTS:")
+        for i, rw in enumerate(rewire.optimal_rewires, 1):
+            lines.extend([
+                f"    #{i}: {rw.original_source}→{rw.original_target}  "
+                f"REWIRE TO  {rw.new_source}→{rw.new_target}",
+                f"        Conductance: {rw.original_conductance_nS} nS → {rw.new_conductance_nS} nS",
+                f"        Δ spectral gap: +{rw.delta_spectral_gap}",
+                f"        Δ energy: {rw.delta_energy_J:.4e} J",
+                f"        Efficiency: {rw.efficiency_score}",
+            ])
+        lines.append("")
+
+    # Beta sweep results
+    lines.append("  WATTS-STROGATZ BETA SWEEP (spectral gap vs rewire probability):")
+    for pt in sweep:
+        marker = " ◄ optimal" if pt["spectral_efficiency"] == max(r["spectral_efficiency"] for r in sweep) else ""
+        lines.append(
+            f"    β={pt['rewire_prob']:.2f}  λ₂={pt['spectral_gap']:.6f}  "
+            f"CC={pt['clustering_coefficient']:.4f}  "
+            f"APL={pt['average_path_length']:.2f}  "
+            f"eff={pt['spectral_efficiency']}{marker}"
+        )
+    lines.append("")
+
+    # Payvand Mosaic reference
+    lines.extend([
+        "MOSAIC ARCHITECTURE REFERENCE (Payvand et al.):",
+        f"  Architecture:        {MOSAIC_SPEC.architecture_type}",
+        f"  Routing substrate:   {MOSAIC_SPEC.routing_substrate}",
+        f"  Principle:           {MOSAIC_SPEC.routing_principle}",
+        f"  Energy/route:        {MOSAIC_SPEC.energy_per_route_label}",
+        f"  READ operation:      {MOSAIC_SPEC.read_operation}",
+        f"  WRITE operation:     {MOSAIC_SPEC.write_operation}",
+        f"  Tile model:          {MOSAIC_SPEC.tile_model}",
+        "",
+    ])
+
+    # Bioelectric memory reference
+    lines.extend([
+        "BIOELECTRIC MEMORY REFERENCE (Levin et al.):",
+        f"  T_hold (initial):    {LEVIN_SPEC.t_hold_initial_label}",
+        f"  T_hold (steady):     {LEVIN_SPEC.t_hold_steady_state}",
+        f"  Vmem swing:          {LEVIN_SPEC.vmem_delta_mV} mV ({LEVIN_SPEC.vmem_hyperpolarized_mV} to {LEVIN_SPEC.vmem_depolarized_mV} mV)",
+        f"  GJ conductance:      {LEVIN_SPEC.gap_junction_conductance_label}",
+        f"  GJ type (planarian): {LEVIN_SPEC.gap_junction_type_planarian}",
+        "",
+    ])
+
+    # Cross-species summary (compact)
+    lines.extend([
+        "CROSS-SPECIES COMPARISON (EMPIRICALLY GROUNDED):",
+        "  | System    | Vmem Ease | Persistence        | I/O Speed | GJ Type  | Spectral |",
+        "  |-----------|-----------|--------------------|-----------|-----------| ---------|",
+        "  | Planarian | High      | 3-6h / Permanent   | s-min     | Innexin   | HIGH    |",
+        "  | Xenopus   | High      | hours-days / Perm   | ms-min    | Connexin  | MODERATE|",
+        "  | Physarum  | Moderate  | hours-days          | s-min     | None/Tube | HIGH    |",
+        "  | Organoid  | Low-Mod   | days-weeks          | ms-s      | Connexin  | LOW-MOD |",
+        "",
+    ])
+
+    # Hypothesis + falsification
+    lines.extend([
+        "SPECTRAL THRESHOLD HYPOTHESIS:",
+        f"  {SPECTRAL_THRESHOLD.theta_critical_label}",
+        f"  Energy-delay model: {SPECTRAL_THRESHOLD.energy_delay_product_model}",
+        f"  Success metric: {SPECTRAL_THRESHOLD.success_metric}",
+        "",
+        "KILL CONDITION:",
+        f"  {SPECTRAL_THRESHOLD.kill_condition}",
+        "",
+    ])
+
     return lines
 
 

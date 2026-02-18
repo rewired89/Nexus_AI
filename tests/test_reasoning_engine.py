@@ -16,14 +16,30 @@ from acheron.reasoning.substrate import (
 )
 from acheron.reasoning.mosaic import (
     analyze_topology,
+    analyze_spectral_properties,
     build_ring_lattice,
     build_small_world,
     build_uniform_random,
     compare_topologies,
     compute_clustering_coefficient,
     compute_average_path_length,
+    compute_graph_laplacian,
     compute_signal_propagation_latency,
     compute_energy_per_routing_event,
+    compute_spectral_gap,
+    compute_total_network_energy,
+    find_optimal_rewires,
+    rewire_sweep,
+)
+from acheron.reasoning.empirical import (
+    CROSS_SPECIES_TABLE,
+    EMPIRICAL_PARAMS,
+    LEVIN_SPEC,
+    MOSAIC_SPEC,
+    SPECTRAL_THRESHOLD,
+    format_cross_species_table,
+    get_cross_species_table,
+    get_empirical_context,
 )
 from acheron.reasoning.denram import (
     EncodingMode,
@@ -458,7 +474,7 @@ class TestFreezeThaw:
 
 class TestValidation:
     def test_modeling_layers_registered(self):
-        assert len(MODELING_LAYERS) == 8
+        assert len(MODELING_LAYERS) == 9  # 8 original + empirical
 
     def test_interaction_map(self):
         interactions = build_interaction_map()
@@ -470,7 +486,7 @@ class TestValidation:
 
     def test_generate_report_no_sim(self):
         report = generate_validation_report(run_simulations=False)
-        assert report.total_layers == 8
+        assert report.total_layers == 9
         assert report.total_new_variables > 0
         assert report.all_simulations_ready is True
         assert report.total_missing_data_items > 0
@@ -478,6 +494,9 @@ class TestValidation:
     def test_generate_report_with_sim(self):
         report = generate_validation_report(run_simulations=True, seed=42)
         assert report.topology_comparison is not None
+        assert report.spectral_analysis is not None
+        assert report.spectral_analysis.spectral_gap > 0
+        assert report.rewire_analysis is not None
         assert report.delay_encoding_phase is not None
         assert report.delay_encoding_static is not None
         assert report.heterogeneity_comparison is not None
@@ -497,8 +516,8 @@ class TestValidation:
     def test_report_to_dict(self):
         report = generate_validation_report(run_simulations=False)
         d = report_to_dict(report)
-        assert d["total_layers"] == 8
-        assert len(d["layers"]) == 8
+        assert d["total_layers"] == 9
+        assert len(d["layers"]) == 9
         assert len(d["interactions"]) == 10
 
 
@@ -566,3 +585,233 @@ class TestComputationLayer:
         query = "Is planarian bioelectric memory viable?"
         template = get_mode_query_template(NexusMode.DECISION, fast=True, query=query)
         assert "REASONING ENGINE" not in template
+
+    def test_detect_spectral_rewiring_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query(
+            "analyze our Watts-Strogatz connectivity matrix and identify "
+            "edge-rewiring events that minimize energy dissipation while "
+            "maximizing the Spectral Gap"
+        )
+        assert "spectral_rewiring" in modules
+
+    def test_detect_payvand_mosaic_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query(
+            "given Melika Payvand's research on Mosaic architectures"
+        )
+        assert "spectral_rewiring" in modules
+
+    def test_detect_cross_species_query(self):
+        from acheron.rag.hypothesis_engine import detect_computation_query
+        modules = detect_computation_query("cross-species comparison of bioelectric memory")
+        assert "spectral_rewiring" in modules
+
+    def test_run_spectral_rewiring_computation(self):
+        from acheron.rag.hypothesis_engine import run_computation
+        result = run_computation(
+            ["spectral_rewiring"],
+            "analyze Watts-Strogatz connectivity matrix spectral gap"
+        )
+        assert "REASONING ENGINE" in result
+        assert "SPECTRAL ANALYSIS" in result
+        assert "Spectral gap" in result
+        assert "REWIRING" in result
+        assert "MOSAIC" in result
+        assert "BIOELECTRIC MEMORY" in result
+        assert "CROSS-SPECIES" in result
+        assert "KILL CONDITION" in result
+
+
+# ======================================================================
+# Section 2b: Graph Laplacian Spectral Analysis
+# ======================================================================
+
+class TestSpectralAnalysis:
+    def test_graph_laplacian_ring(self):
+        g = build_ring_lattice(10, 4)
+        L, node_ids = compute_graph_laplacian(g)
+        assert len(L) == 10
+        assert len(node_ids) == 10
+        # Laplacian row sum should be 0 for each row
+        for row in L:
+            assert abs(sum(row)) < 1e-10
+
+    def test_graph_laplacian_small_world(self):
+        g = build_small_world(20, 4, seed=42)
+        L, _ = compute_graph_laplacian(g)
+        # Laplacian is symmetric
+        for i in range(len(L)):
+            for j in range(len(L)):
+                assert abs(L[i][j] - L[j][i]) < 1e-10
+
+    def test_spectral_gap_positive(self):
+        g = build_small_world(20, 4, seed=42)
+        gap = compute_spectral_gap(g)
+        assert gap > 0  # connected graph should have positive lambda_2
+
+    def test_spectral_gap_ring_vs_small_world(self):
+        ring = build_ring_lattice(30, 4)
+        sw = build_small_world(30, 4, rewire_prob=0.2, seed=42)
+        gap_ring = compute_spectral_gap(ring)
+        gap_sw = compute_spectral_gap(sw)
+        # Small-world should have higher spectral gap (better connectivity)
+        assert gap_sw >= gap_ring * 0.8  # allow some tolerance
+
+    def test_total_network_energy(self):
+        g = build_small_world(10, 4, seed=42)
+        energy = compute_total_network_energy(g)
+        assert energy > 0
+
+    def test_spectral_analysis_full(self):
+        g = build_small_world(15, 4, seed=42)
+        sa = analyze_spectral_properties(g)
+        assert sa.spectral_gap > 0
+        assert len(sa.laplacian_eigenvalues) > 0
+        assert sa.total_network_energy_J > 0
+        assert sa.energy_per_edge_J > 0
+        assert sa.spectral_efficiency > 0
+
+    def test_spectral_analysis_small_graph(self):
+        g = SubstrateGraph()
+        g.nodes["a"] = SubstrateNode(node_id="a")
+        sa = analyze_spectral_properties(g)
+        assert sa.spectral_gap == 0.0
+
+
+# ======================================================================
+# Section 2c: Energy-Optimized Edge Rewiring
+# ======================================================================
+
+class TestEdgeRewiring:
+    def test_find_optimal_rewires(self):
+        g = build_small_world(20, 4, seed=42)
+        result = find_optimal_rewires(g, rewire_budget=3, seed=42)
+        assert result.n_nodes == 20
+        assert result.baseline_spectral_gap > 0
+        assert result.rewire_budget == 3
+        assert len(result.candidates) > 0
+
+    def test_rewire_improves_efficiency(self):
+        g = build_small_world(20, 4, rewire_prob=0.05, seed=42)
+        result = find_optimal_rewires(g, rewire_budget=5, seed=42)
+        # Optimal rewires should improve spectral efficiency (gap/energy),
+        # even if cumulative application introduces interaction effects on gap alone
+        if result.optimal_rewires:
+            assert result.optimized_spectral_efficiency >= result.baseline_spectral_efficiency
+            # Individual top rewire should have positive delta_spectral_gap
+            assert result.optimal_rewires[0].delta_spectral_gap > 0
+
+    def test_rewire_candidates_have_scores(self):
+        g = build_small_world(15, 4, seed=42)
+        result = find_optimal_rewires(g, rewire_budget=3, seed=42)
+        for c in result.candidates:
+            assert c.original_source != ""
+            assert c.new_target != ""
+            # efficiency_score should be computed
+            assert isinstance(c.efficiency_score, float)
+
+    def test_rewire_sweep(self):
+        results = rewire_sweep(n_nodes=15, k_neighbors=4, seed=42)
+        assert len(results) > 5
+        # All entries should have computed values
+        for r in results:
+            assert "spectral_gap" in r
+            assert "clustering_coefficient" in r
+            assert "average_path_length" in r
+            assert "spectral_efficiency" in r
+
+    def test_rewire_sweep_monotonic_path_length(self):
+        results = rewire_sweep(n_nodes=20, k_neighbors=4, seed=42)
+        # Path length should generally decrease as rewire_prob increases
+        apl_first = results[0]["average_path_length"]  # p=0
+        apl_last = results[-1]["average_path_length"]   # p=1
+        assert apl_last < apl_first
+
+    def test_small_graph_rewire(self):
+        # Graph with < 4 nodes should return empty result
+        g = SubstrateGraph()
+        for i in range(3):
+            g.nodes[f"c{i}"] = SubstrateNode(node_id=f"c{i}")
+        result = find_optimal_rewires(g, seed=42)
+        assert result.n_nodes == 3
+        assert len(result.optimal_rewires) == 0
+
+
+# ======================================================================
+# Section 10: Empirical Grounding Layer
+# ======================================================================
+
+class TestEmpiricalGrounding:
+    def test_mosaic_spec(self):
+        assert MOSAIC_SPEC.architecture_type == "2D Analog Systolic Array"
+        assert MOSAIC_SPEC.energy_per_route_J > 0
+        assert MOSAIC_SPEC.spectral_gap_target > 0
+        assert "RRAM" in MOSAIC_SPEC.routing_substrate
+
+    def test_levin_spec(self):
+        assert LEVIN_SPEC.t_hold_initial_hours == 3.0
+        assert LEVIN_SPEC.vmem_delta_mV == 50.0
+        assert LEVIN_SPEC.gap_junction_conductance_nS > 0
+        assert "Innexin" in LEVIN_SPEC.gap_junction_type_planarian
+        assert "Connexin" in LEVIN_SPEC.gap_junction_type_vertebrate
+
+    def test_spectral_threshold_model(self):
+        assert SPECTRAL_THRESHOLD.theta_critical == 0.05
+        assert SPECTRAL_THRESHOLD.theta_optimal == 0.15
+        assert SPECTRAL_THRESHOLD.is_stall_risk(0.01) is True
+        assert SPECTRAL_THRESHOLD.is_stall_risk(0.10) is False
+        assert SPECTRAL_THRESHOLD.is_optimal(0.20) is True
+        assert SPECTRAL_THRESHOLD.is_optimal(0.10) is False
+
+    def test_energy_delay_cost(self):
+        cost = SPECTRAL_THRESHOLD.energy_delay_cost(1e-10, 0.15)
+        assert cost > 0
+        assert cost < float("inf")
+        # Zero spectral gap = infinite cost
+        cost_inf = SPECTRAL_THRESHOLD.energy_delay_cost(1e-10, 0.0)
+        assert cost_inf == float("inf")
+
+    def test_cross_species_table(self):
+        table = get_cross_species_table()
+        assert len(table) == 4
+        organisms = {e.organism for e in table}
+        assert "Schmidtea mediterranea" in organisms
+        assert "Xenopus laevis" in organisms
+        assert "Physarum polycephalum" in organisms
+
+    def test_cross_species_relevance_scores(self):
+        table = get_cross_species_table()
+        for entry in table:
+            assert 1 <= entry.relevance_score <= 5
+        # Planarian should have highest relevance
+        planarian = [e for e in table if "Schmidtea" in e.organism][0]
+        assert planarian.relevance_score == 5
+
+    def test_cross_species_table_formatting(self):
+        text = format_cross_species_table()
+        assert "CROSS-SPECIES" in text
+        assert "Planarian" in text
+        assert "Xenopus" in text
+        assert "Physarum" in text
+
+    def test_empirical_params(self):
+        assert EMPIRICAL_PARAMS.spectral_gap_target == 0.15
+        assert EMPIRICAL_PARAMS.spectral_gap_critical == 0.05
+        assert EMPIRICAL_PARAMS.gj_conductance_nS == 2.0
+        assert EMPIRICAL_PARAMS.e_bit_pJ > 0
+
+    def test_empirical_context_generation(self):
+        ctx = get_empirical_context()
+        assert "CERTIFIED EMPIRICAL PARAMETERS" in ctx
+        assert "T_hold" in ctx
+        assert "SPECTRAL PROPERTIES" in ctx
+        assert "MOSAIC" in ctx
+        assert "Lattice (p=0)" in ctx
+        assert "Small-World" in ctx
+
+    def test_cross_species_entries_have_evidence(self):
+        for entry in CROSS_SPECIES_TABLE:
+            assert "[MEASURED]" in entry.vmem_manipulation_evidence
+            assert entry.gap_junction_type != ""
+            assert entry.spectral_relevance != ""

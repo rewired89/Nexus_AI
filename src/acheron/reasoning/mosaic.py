@@ -10,11 +10,15 @@ Simulation capabilities:
     - Energy cost per long-range signal
     - Fault tolerance under random node failure
     - Uniform topology vs small-world topology comparison
+    - Graph Laplacian spectral analysis (algebraic connectivity / Fiedler value)
+    - Energy-optimized edge rewiring (maximize spectral gap, minimize dissipation)
 
 Output metrics:
     - Signal propagation latency
     - Energy per routing event
     - Error cascade probability
+    - Spectral gap (lambda_2 of graph Laplacian)
+    - Energy-optimal rewiring recommendations
 """
 
 from __future__ import annotations
@@ -444,3 +448,546 @@ def compare_topologies(
         small_world=analyze_topology(sw, "small_world"),
         uniform=analyze_topology(uniform, "uniform"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Graph Laplacian Spectral Analysis
+# ---------------------------------------------------------------------------
+
+def _build_weighted_adjacency_matrix(graph: SubstrateGraph) -> tuple[list[list[float]], list[str]]:
+    """Build weighted adjacency matrix W from substrate graph.
+
+    W[i][j] = sum of conductances between nodes i and j (nS).
+    Returns (matrix, node_id_list).
+    """
+    node_ids = sorted(graph.nodes.keys())
+    n = len(node_ids)
+    idx_map = {nid: i for i, nid in enumerate(node_ids)}
+
+    W = [[0.0] * n for _ in range(n)]
+    for e in graph.edges:
+        si = idx_map.get(e.source)
+        ti = idx_map.get(e.target)
+        if si is not None and ti is not None and si != ti:
+            W[si][ti] += e.conductance_nS
+            W[ti][si] += e.conductance_nS
+
+    return W, node_ids
+
+
+def compute_graph_laplacian(graph: SubstrateGraph) -> tuple[list[list[float]], list[str]]:
+    """Compute the graph Laplacian matrix L = D - W.
+
+    D = degree matrix (diagonal, d_i = sum of edge weights incident to i)
+    W = weighted adjacency matrix
+
+    Returns (L, node_id_list).
+    """
+    W, node_ids = _build_weighted_adjacency_matrix(graph)
+    n = len(node_ids)
+
+    L = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        degree = sum(W[i])
+        L[i][i] = degree
+        for j in range(n):
+            if i != j:
+                L[i][j] = -W[i][j]
+
+    return L, node_ids
+
+
+def _eigenvalues_symmetric(M: list[list[float]], max_iter: int = 500, tol: float = 1e-10) -> list[float]:
+    """Compute eigenvalues of a symmetric matrix using QR iteration.
+
+    Uses Householder tridiagonalization followed by implicit QR shifts.
+    Falls back to explicit shifted inverse iteration for the smallest
+    non-trivial eigenvalue when needed.
+
+    Returns eigenvalues sorted in ascending order.
+    """
+    n = len(M)
+    if n == 0:
+        return []
+    if n == 1:
+        return [M[0][0]]
+
+    # Work on a copy
+    A = [row[:] for row in M]
+
+    # Householder tridiagonalization for better QR convergence
+    diag = [0.0] * n     # diagonal
+    off = [0.0] * n      # off-diagonal
+
+    # Reduce to tridiagonal form
+    for i in range(n - 2, 0, -1):
+        # Compute Householder vector for column i
+        scale = sum(abs(A[i][j]) for j in range(i))
+        if scale < 1e-15:
+            off[i] = A[i][i - 1]
+            continue
+
+        h = 0.0
+        for j in range(i):
+            A[i][j] /= scale
+            h += A[i][j] * A[i][j]
+
+        f = A[i][i - 1]
+        g = -math.copysign(math.sqrt(h), f)
+        off[i] = scale * g
+        h -= f * g
+        A[i][i - 1] = f - g
+
+        f = 0.0
+        for j in range(i):
+            A[j][i] = A[i][j] / h
+            g = 0.0
+            for k in range(j + 1):
+                g += A[j][k] * A[i][k]
+            for k in range(j + 1, i):
+                g += A[k][j] * A[i][k]
+            off[j] = g / h
+            f += off[j] * A[i][j]
+
+        hh = f / (h + h)
+        for j in range(i):
+            f = A[i][j]
+            g = off[j] - hh * f
+            off[j] = g
+            for k in range(j + 1):
+                A[j][k] -= f * off[k] + g * A[i][k]
+
+    off[0] = 0.0
+    for i in range(n):
+        diag[i] = A[i][i]
+    if n >= 2:
+        off[1] = A[1][0]
+        for i in range(2, n):
+            # off[i] was set during tridiagonalization
+            if off[i] == 0.0:
+                off[i] = A[i][i - 1]
+
+    # QL iteration with implicit shifts on the tridiagonal matrix
+    d = diag[:]
+    e = off[:]
+
+    for _ in range(max_iter * n):
+        converged = True
+        for l_idx in range(n - 1):
+            if abs(e[l_idx + 1]) > tol * (abs(d[l_idx]) + abs(d[l_idx + 1]) + 1e-30):
+                converged = False
+                break
+        if converged:
+            break
+
+        for l_idx in range(n - 1):
+            if abs(e[l_idx + 1]) < tol * (abs(d[l_idx]) + abs(d[l_idx + 1]) + 1e-30):
+                continue
+
+            # Find block end
+            m = l_idx
+            for m in range(l_idx + 1, n):
+                if m == n - 1 or abs(e[m + 1 if m + 1 < n else m]) < tol * (abs(d[m]) + abs(d[m + 1 if m + 1 < n else m]) + 1e-30):
+                    break
+
+            if m == l_idx:
+                continue
+
+            # Wilkinson shift
+            g = (d[l_idx + 1] - d[l_idx]) / (2.0 * e[l_idx + 1]) if abs(e[l_idx + 1]) > 1e-30 else 0.0
+            r = math.sqrt(g * g + 1.0)
+            g = d[m] - d[l_idx] + e[l_idx + 1] / (g + math.copysign(r, g)) if abs(g) > 1e-30 else d[m] - d[l_idx]
+
+            s = 1.0
+            c = 1.0
+            p = 0.0
+
+            for i in range(m - 1, l_idx - 1, -1):
+                f = s * e[i + 1]
+                b = c * e[i + 1]
+                if abs(f) >= abs(g):
+                    c = g / f
+                    r = math.sqrt(c * c + 1.0)
+                    e[i + 2 if i + 2 < n else n - 1] = f * r
+                    s = 1.0 / r
+                    c *= s
+                else:
+                    s = f / g
+                    r = math.sqrt(s * s + 1.0)
+                    e[i + 2 if i + 2 < n else n - 1] = g * r
+                    c = 1.0 / r
+                    s *= c
+                g = d[i + 1] - p
+                r = (d[i] - g) * s + 2.0 * c * b
+                p = s * r
+                d[i + 1] = g + p
+                g = c * r - b
+
+            d[l_idx] -= p
+            e[l_idx + 1 if l_idx + 1 < n else n - 1] = g
+            if m + 1 < n:
+                e[m + 1] = 0.0
+
+    d.sort()
+    return d
+
+
+def compute_spectral_gap(graph: SubstrateGraph) -> float:
+    """Compute the spectral gap (algebraic connectivity) of the graph.
+
+    The spectral gap is lambda_2, the second-smallest eigenvalue of the
+    graph Laplacian L = D - W. A larger spectral gap means faster mixing
+    and signal propagation across the network.
+
+    Returns lambda_2 (>= 0). Returns 0.0 for disconnected graphs.
+    """
+    L, _ = compute_graph_laplacian(graph)
+    n = len(L)
+    if n < 2:
+        return 0.0
+
+    eigenvalues = _eigenvalues_symmetric(L)
+
+    # lambda_1 should be ~0 (connected graph). lambda_2 is the spectral gap.
+    # Find first eigenvalue meaningfully > 0.
+    for ev in eigenvalues[1:]:
+        if ev > 1e-8:
+            return round(ev, 8)
+
+    return 0.0
+
+
+def compute_total_network_energy(
+    graph: SubstrateGraph,
+    delta_v_mV: float = 30.0,
+    duration_ms: float = 1.0,
+) -> float:
+    """Total energy dissipated across all edges during one signaling event.
+
+    E_total = sum_edges( G_ij * deltaV^2 * t )  in Joules.
+    """
+    v = delta_v_mV * 1e-3    # mV -> V
+    t = duration_ms * 1e-3   # ms -> s
+    total = 0.0
+    for e in graph.edges:
+        g = e.conductance_nS * 1e-9  # nS -> S
+        total += g * v * v * t
+    return total
+
+
+@dataclass
+class SpectralAnalysis:
+    """Spectral properties of the graph Laplacian."""
+
+    spectral_gap: float = 0.0              # lambda_2 (algebraic connectivity)
+    laplacian_eigenvalues: list[float] = field(default_factory=list)  # ascending
+    total_network_energy_J: float = 0.0    # total dissipation per signaling event
+    energy_per_edge_J: float = 0.0         # average energy per edge
+    spectral_efficiency: float = 0.0       # spectral_gap / total_energy (higher = better)
+
+
+def analyze_spectral_properties(
+    graph: SubstrateGraph,
+    delta_v_mV: float = 30.0,
+    duration_ms: float = 1.0,
+    n_eigenvalues: int = 10,
+) -> SpectralAnalysis:
+    """Full spectral analysis of the substrate graph.
+
+    Computes Laplacian eigenvalues, spectral gap, network energy,
+    and the spectral efficiency ratio (gap / energy).
+    """
+    L, _ = compute_graph_laplacian(graph)
+    n = len(L)
+    if n < 2:
+        return SpectralAnalysis()
+
+    eigenvalues = _eigenvalues_symmetric(L)
+
+    # Trim to requested count
+    eigs = eigenvalues[:min(n_eigenvalues, len(eigenvalues))]
+
+    spectral_gap = 0.0
+    for ev in eigenvalues[1:]:
+        if ev > 1e-8:
+            spectral_gap = ev
+            break
+
+    total_energy = compute_total_network_energy(graph, delta_v_mV, duration_ms)
+    edge_count = graph.edge_count()
+    energy_per_edge = total_energy / edge_count if edge_count > 0 else 0.0
+    spectral_eff = spectral_gap / total_energy if total_energy > 1e-30 else 0.0
+
+    return SpectralAnalysis(
+        spectral_gap=round(spectral_gap, 8),
+        laplacian_eigenvalues=[round(e, 8) for e in eigs],
+        total_network_energy_J=total_energy,
+        energy_per_edge_J=energy_per_edge,
+        spectral_efficiency=round(spectral_eff, 4),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Energy-Optimized Edge Rewiring
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RewireCandidate:
+    """A candidate edge rewiring event with computed impact."""
+
+    original_source: str
+    original_target: str
+    new_source: str
+    new_target: str
+    original_conductance_nS: float = 0.0
+    new_conductance_nS: float = 0.0
+    delta_spectral_gap: float = 0.0         # change in lambda_2
+    delta_energy_J: float = 0.0             # change in total network energy
+    efficiency_score: float = 0.0           # delta_gap / |delta_energy| (higher = better)
+    new_spectral_gap: float = 0.0
+    new_total_energy_J: float = 0.0
+
+
+@dataclass
+class RewireAnalysis:
+    """Complete rewiring optimization analysis."""
+
+    baseline_spectral_gap: float = 0.0
+    baseline_total_energy_J: float = 0.0
+    baseline_spectral_efficiency: float = 0.0
+    candidates: list[RewireCandidate] = field(default_factory=list)
+    optimal_rewires: list[RewireCandidate] = field(default_factory=list)
+    optimized_spectral_gap: float = 0.0
+    optimized_total_energy_J: float = 0.0
+    optimized_spectral_efficiency: float = 0.0
+    gap_improvement_pct: float = 0.0
+    energy_reduction_pct: float = 0.0
+    n_nodes: int = 0
+    n_edges: int = 0
+    rewire_budget: int = 0
+
+
+def _apply_rewire(
+    graph: SubstrateGraph,
+    old_source: str,
+    old_target: str,
+    new_source: str,
+    new_target: str,
+    new_conductance_nS: float,
+    new_delay_ms: float,
+) -> SubstrateGraph:
+    """Return a new graph with one edge rewired."""
+    new_graph = SubstrateGraph()
+    new_graph.nodes = dict(graph.nodes)
+
+    found = False
+    for e in graph.edges:
+        if not found and e.source == old_source and e.target == old_target:
+            new_graph.edges.append(SubstrateEdge(
+                source=new_source,
+                target=new_target,
+                conductance_nS=new_conductance_nS,
+                diffusion_delay_ms=new_delay_ms,
+                metadata={"rewired_from": f"{old_source}->{old_target}"},
+            ))
+            found = True
+        else:
+            new_graph.edges.append(e)
+
+    if not found:
+        # Try reverse direction
+        for i, e in enumerate(new_graph.edges):
+            if e.source == old_target and e.target == old_source:
+                new_graph.edges[i] = SubstrateEdge(
+                    source=new_source,
+                    target=new_target,
+                    conductance_nS=new_conductance_nS,
+                    diffusion_delay_ms=new_delay_ms,
+                    metadata={"rewired_from": f"{old_target}->{old_source}"},
+                )
+                break
+
+    return new_graph
+
+
+def find_optimal_rewires(
+    graph: SubstrateGraph,
+    rewire_budget: int = 5,
+    delta_v_mV: float = 30.0,
+    duration_ms: float = 1.0,
+    long_range_conductance_nS: float = 0.5,
+    long_range_delay_ms: float = 2.0,
+    seed: Optional[int] = 42,
+) -> RewireAnalysis:
+    """Find edge rewirings that maximize spectral gap while minimizing energy.
+
+    Strategy: greedy search over candidate rewires. For each local edge,
+    evaluate rewiring it to a distant node and compute the spectral gap
+    gain vs energy cost change. Rank by efficiency score
+    (delta_gap / |delta_energy|) and select top candidates.
+
+    This implements the Payvand Mosaic principle: in-memory routing
+    optimization where the topology itself encodes the computation path.
+    """
+    if seed is not None:
+        random.seed(seed)
+
+    n = graph.node_count()
+    if n < 4:
+        return RewireAnalysis(n_nodes=n, n_edges=graph.edge_count())
+
+    baseline_gap = compute_spectral_gap(graph)
+    baseline_energy = compute_total_network_energy(graph, delta_v_mV, duration_ms)
+    baseline_eff = baseline_gap / baseline_energy if baseline_energy > 1e-30 else 0.0
+
+    node_ids = sorted(graph.nodes.keys())
+    adj = _build_adjacency(graph)
+
+    # Identify local (non-rewired) edges as candidates
+    local_edges: list[SubstrateEdge] = []
+    for e in graph.edges:
+        if not e.metadata.get("rewired", False):
+            local_edges.append(e)
+
+    # Limit candidates for tractability
+    max_candidates = min(len(local_edges), n * 2)
+    candidate_edges = local_edges[:max_candidates]
+
+    candidates: list[RewireCandidate] = []
+
+    for edge in candidate_edges:
+        # Find a distant target (not already a neighbor)
+        neighbors = adj.get(edge.source, set()) | adj.get(edge.target, set())
+        distant_targets = [nid for nid in node_ids
+                          if nid != edge.source and nid != edge.target
+                          and nid not in neighbors]
+
+        if not distant_targets:
+            continue
+
+        # Sample a few distant targets
+        sample_size = min(3, len(distant_targets))
+        targets = random.sample(distant_targets, sample_size)
+
+        for new_tgt in targets:
+            new_graph = _apply_rewire(
+                graph, edge.source, edge.target,
+                edge.source, new_tgt,
+                long_range_conductance_nS, long_range_delay_ms,
+            )
+
+            new_gap = compute_spectral_gap(new_graph)
+            new_energy = compute_total_network_energy(new_graph, delta_v_mV, duration_ms)
+
+            delta_gap = new_gap - baseline_gap
+            delta_energy = new_energy - baseline_energy
+
+            # We want positive delta_gap (improved connectivity)
+            # and negative or small delta_energy (reduced dissipation)
+            if abs(delta_energy) > 1e-30:
+                eff = delta_gap / abs(delta_energy)
+            elif delta_gap > 0:
+                eff = float("inf")
+            else:
+                eff = 0.0
+
+            candidates.append(RewireCandidate(
+                original_source=edge.source,
+                original_target=edge.target,
+                new_source=edge.source,
+                new_target=new_tgt,
+                original_conductance_nS=edge.conductance_nS,
+                new_conductance_nS=long_range_conductance_nS,
+                delta_spectral_gap=round(delta_gap, 8),
+                delta_energy_J=delta_energy,
+                efficiency_score=round(eff, 4) if eff != float("inf") else 1e12,
+                new_spectral_gap=round(new_gap, 8),
+                new_total_energy_J=new_energy,
+            ))
+
+    # Sort by efficiency: prefer rewires that increase gap with least energy cost
+    # Filter to only those that actually improve spectral gap
+    beneficial = [c for c in candidates if c.delta_spectral_gap > 0]
+    beneficial.sort(key=lambda c: c.efficiency_score, reverse=True)
+
+    # Select top-K non-overlapping rewires
+    optimal: list[RewireCandidate] = []
+    used_edges: set[tuple[str, str]] = set()
+
+    for c in beneficial:
+        edge_key = (min(c.original_source, c.original_target),
+                    max(c.original_source, c.original_target))
+        if edge_key not in used_edges and len(optimal) < rewire_budget:
+            used_edges.add(edge_key)
+            optimal.append(c)
+
+    # Compute cumulative optimized metrics
+    working_graph = SubstrateGraph()
+    working_graph.nodes = dict(graph.nodes)
+    working_graph.edges = list(graph.edges)
+
+    for rw in optimal:
+        working_graph = _apply_rewire(
+            working_graph, rw.original_source, rw.original_target,
+            rw.new_source, rw.new_target,
+            rw.new_conductance_nS, long_range_delay_ms,
+        )
+
+    opt_gap = compute_spectral_gap(working_graph) if optimal else baseline_gap
+    opt_energy = compute_total_network_energy(working_graph, delta_v_mV, duration_ms) if optimal else baseline_energy
+    opt_eff = opt_gap / opt_energy if opt_energy > 1e-30 else 0.0
+
+    gap_improvement = ((opt_gap - baseline_gap) / baseline_gap * 100.0) if baseline_gap > 1e-10 else 0.0
+    energy_reduction = ((baseline_energy - opt_energy) / baseline_energy * 100.0) if baseline_energy > 1e-30 else 0.0
+
+    return RewireAnalysis(
+        baseline_spectral_gap=round(baseline_gap, 8),
+        baseline_total_energy_J=baseline_energy,
+        baseline_spectral_efficiency=round(baseline_eff, 4),
+        candidates=candidates,
+        optimal_rewires=optimal,
+        optimized_spectral_gap=round(opt_gap, 8),
+        optimized_total_energy_J=opt_energy,
+        optimized_spectral_efficiency=round(opt_eff, 4),
+        gap_improvement_pct=round(gap_improvement, 2),
+        energy_reduction_pct=round(energy_reduction, 2),
+        n_nodes=n,
+        n_edges=graph.edge_count(),
+        rewire_budget=rewire_budget,
+    )
+
+
+def rewire_sweep(
+    n_nodes: int = 50,
+    k_neighbors: int = 6,
+    rewire_probs: Optional[list[float]] = None,
+    seed: int = 42,
+) -> list[dict]:
+    """Sweep rewire probability and compute spectral gap + energy for each.
+
+    Implements the Watts-Strogatz beta sweep: as beta increases from 0 to 1,
+    tracks how spectral gap and energy change, identifying the optimal
+    operating point for bioelectric signal propagation.
+    """
+    if rewire_probs is None:
+        rewire_probs = [0.0, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.8, 1.0]
+
+    results: list[dict] = []
+    for beta in rewire_probs:
+        g = build_small_world(n_nodes, k_neighbors, rewire_prob=beta, seed=seed)
+        gap = compute_spectral_gap(g)
+        cc = compute_clustering_coefficient(g)
+        apl = compute_average_path_length(g)
+        energy = compute_total_network_energy(g)
+        eff = gap / energy if energy > 1e-30 else 0.0
+
+        results.append({
+            "rewire_prob": beta,
+            "spectral_gap": round(gap, 8),
+            "clustering_coefficient": round(cc, 4),
+            "average_path_length": round(apl, 4),
+            "total_energy_J": energy,
+            "spectral_efficiency": round(eff, 4),
+        })
+
+    return results

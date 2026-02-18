@@ -21,9 +21,20 @@ from .substrate import SubstrateGraph
 from .mosaic import (
     TopologyMetrics,
     TopologyComparison,
+    SpectralAnalysis,
+    RewireAnalysis,
     build_small_world,
     compare_topologies,
     analyze_topology,
+    analyze_spectral_properties,
+    find_optimal_rewires,
+)
+from .empirical import (
+    MOSAIC_SPEC,
+    LEVIN_SPEC,
+    SPECTRAL_THRESHOLD,
+    EMPIRICAL_PARAMS,
+    format_cross_species_table,
 )
 from .denram import (
     DelayEncodingMetrics,
@@ -105,12 +116,14 @@ MODELING_LAYERS: list[ModelingLayer] = [
     ),
     ModelingLayer(
         layer_id="mosaic",
-        name="Mosaic Small-World Model",
+        name="Mosaic Small-World + Spectral Analysis",
         section="Section 2",
         module="acheron.reasoning.mosaic",
-        description="Watts-Strogatz small-world graph abstraction. Nodes = cell clusters, "
-                    "Edges = weighted gap junction conductance. Local high clustering + "
-                    "sparse long-range links.",
+        description="Watts-Strogatz small-world graph abstraction with graph Laplacian spectral "
+                    "analysis and energy-optimized edge rewiring. Implements Payvand Mosaic "
+                    "in-memory routing principle. Nodes = cell clusters, Edges = weighted gap "
+                    "junction conductance. Computes spectral gap (lambda_2), energy-delay product, "
+                    "and optimal rewiring events.",
         variables_introduced=[
             "TopologyMetrics.clustering_coefficient",
             "TopologyMetrics.average_path_length",
@@ -118,6 +131,13 @@ MODELING_LAYERS: list[ModelingLayer] = [
             "TopologyMetrics.energy_per_routing_event_J",
             "TopologyMetrics.error_cascade_probability",
             "TopologyMetrics.fault_tolerance_fraction",
+            "SpectralAnalysis.spectral_gap (lambda_2)",
+            "SpectralAnalysis.laplacian_eigenvalues",
+            "SpectralAnalysis.total_network_energy_J",
+            "SpectralAnalysis.spectral_efficiency",
+            "RewireAnalysis.optimal_rewires",
+            "RewireAnalysis.gap_improvement_pct",
+            "RewireAnalysis.energy_reduction_pct",
             "rewire_prob (Watts-Strogatz beta)",
             "long_range_conductance_nS",
             "long_range_delay_ms",
@@ -129,7 +149,7 @@ MODELING_LAYERS: list[ModelingLayer] = [
             "Long-range gap junction conductance values",
         ],
         depends_on=["substrate"],
-        feeds_into=["heterogeneity", "state_space"],
+        feeds_into=["heterogeneity", "state_space", "empirical"],
     ),
     ModelingLayer(
         layer_id="denram",
@@ -293,6 +313,31 @@ MODELING_LAYERS: list[ModelingLayer] = [
         ],
         depends_on=["ribozyme"],
     ),
+    ModelingLayer(
+        layer_id="empirical",
+        name="Empirical Grounding Layer",
+        section="Section 10",
+        module="acheron.reasoning.empirical",
+        description="Certified reference parameters from Payvand Mosaic architecture and "
+                    "Levin bioelectric research. Cross-species comparison table (Planarian, "
+                    "Xenopus, Physarum, Organoid). Spectral threshold hypothesis model with "
+                    "kill conditions. Fills UNKNOWN slots with [MEASURED], [BOUNDED-INFERENCE], "
+                    "or [TRANSFER] tagged values.",
+        variables_introduced=[
+            "MosaicArchitectureSpec (energy_per_route, spectral_gap_target)",
+            "BioelectricMemorySpec (t_hold, vmem, gap_junction_conductance)",
+            "CrossSpeciesEntry (4 organisms with full parameter sets)",
+            "SpectralThresholdModel (theta_critical, theta_optimal, kill_condition)",
+            "EmpiricalParameters (aggregated certified values)",
+        ],
+        simulation_ready=True,
+        missing_experimental_data=[
+            "Direct spectral gap measurement from planarian tissue connectivity",
+            "In-vivo energy-per-routing-event measurement",
+            "Innexin single-channel conductance in planarian cells",
+        ],
+        depends_on=["mosaic", "state_space"],
+    ),
 ]
 
 
@@ -396,6 +441,8 @@ class ValidationReport:
     total_missing_data_items: int = 0
     # Simulation results (populated when run_simulations=True)
     topology_comparison: Optional[TopologyComparison] = None
+    spectral_analysis: Optional[SpectralAnalysis] = None
+    rewire_analysis: Optional[RewireAnalysis] = None
     delay_encoding_phase: Optional[DelayEncodingMetrics] = None
     delay_encoding_static: Optional[DelayEncodingMetrics] = None
     heterogeneity_comparison: Optional[HeterogeneityComparison] = None
@@ -455,8 +502,13 @@ def generate_validation_report(run_simulations: bool = True, seed: int = 42) -> 
 
 def _run_all_simulations(report: ValidationReport, seed: int = 42) -> None:
     """Execute all simulation layers and attach results to report."""
-    # Section 2: Topology comparison
+    # Section 2: Topology comparison + Spectral analysis
     report.topology_comparison = compare_topologies(n_nodes=50, k_neighbors=6, seed=seed)
+
+    # Section 2b: Spectral analysis + edge rewiring optimization
+    graph_for_spectral = build_small_world(50, 6, seed=seed)
+    report.spectral_analysis = analyze_spectral_properties(graph_for_spectral)
+    report.rewire_analysis = find_optimal_rewires(graph_for_spectral, rewire_budget=5, seed=seed)
 
     # Section 3: Delay encoding (both modes)
     report.delay_encoding_phase = analyze_delay_encoding(
@@ -470,7 +522,6 @@ def _run_all_simulations(report: ValidationReport, seed: int = 42) -> None:
     report.heterogeneity_comparison = compare_substrates(n_nodes=50, seed=seed)
 
     # Section 5: Homeostatic recovery
-    from .mosaic import build_small_world
     graph_for_homeo = build_small_world(50, 6, seed=seed)
     report.homeostatic_adversarial = simulate_adversarial_recovery(
         graph_for_homeo, bias_mV=30.0, seed=seed,
@@ -567,6 +618,32 @@ def format_report(report: ValidationReport) -> str:
             lines.append(f"      Energy/Route: {metrics.energy_per_routing_event_J:.2e} J")
             lines.append(f"      Error Cascade P: {metrics.error_cascade_probability}")
             lines.append(f"      Fault Tolerance: {metrics.fault_tolerance_fraction}")
+        lines.append("")
+
+    if report.spectral_analysis:
+        lines.append("  F.1b Spectral Analysis (Section 2b)")
+        sa = report.spectral_analysis
+        lines.append(f"    Spectral Gap (lambda_2): {sa.spectral_gap}")
+        lines.append(f"    Laplacian Eigenvalues: {sa.laplacian_eigenvalues[:6]}")
+        lines.append(f"    Total Network Energy: {sa.total_network_energy_J:.4e} J")
+        lines.append(f"    Energy per Edge: {sa.energy_per_edge_J:.4e} J")
+        lines.append(f"    Spectral Efficiency: {sa.spectral_efficiency}")
+        stall = SPECTRAL_THRESHOLD.is_stall_risk(sa.spectral_gap)
+        optimal = SPECTRAL_THRESHOLD.is_optimal(sa.spectral_gap)
+        lines.append(f"    Status: {'OPTIMAL' if optimal else 'STALL RISK' if stall else 'SUB-OPTIMAL'}")
+        lines.append("")
+
+    if report.rewire_analysis and report.rewire_analysis.optimal_rewires:
+        lines.append("  F.1c Edge Rewiring Optimization (Section 2c)")
+        ra = report.rewire_analysis
+        lines.append(f"    Baseline Spectral Gap: {ra.baseline_spectral_gap}")
+        lines.append(f"    Optimized Spectral Gap: {ra.optimized_spectral_gap}")
+        lines.append(f"    Improvement: +{ra.gap_improvement_pct}%")
+        lines.append(f"    Energy Reduction: {ra.energy_reduction_pct}%")
+        lines.append(f"    Optimal Rewires: {len(ra.optimal_rewires)}")
+        for i, rw in enumerate(ra.optimal_rewires[:3], 1):
+            lines.append(f"      #{i}: {rw.original_source}→{rw.original_target} → "
+                        f"{rw.new_source}→{rw.new_target} (Δλ₂=+{rw.delta_spectral_gap})")
         lines.append("")
 
     if report.delay_encoding_phase:

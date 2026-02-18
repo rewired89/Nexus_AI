@@ -1,16 +1,18 @@
 """Neuromorphic Reasoning Engine for Acheron.
 
 Integrates substrate-driven computation principles derived from:
-    - Mosaic small-world architectures
+    - Mosaic small-world architectures (Payvand)
+    - Graph Laplacian spectral analysis & energy-optimized rewiring
     - DenRAM delay encoding
     - State-space dynamical models
     - Homeostatic scaling (BESS)
     - Heterogeneity-aware encoding
     - QT45 ribozyme dynamics
+    - Empirical grounding (Levin bioelectric + cross-species)
 
 Modules:
     substrate       Section 1: Substrate=Algorithm core abstraction
-    mosaic          Section 2: Mosaic small-world model adaptation
+    mosaic          Section 2: Mosaic small-world + spectral analysis + rewiring
     denram          Section 3: DenRAM bioelectric delay encoding
     heterogeneity   Section 4: Heterogeneity-aware computation
     homeostatic     Section 5: Homeostatic recovery model (BESS upgrade)
@@ -18,6 +20,7 @@ Modules:
     ribozyme        Section 7: QT45 ribozyme integration layer
     freeze_thaw     Section 8: Freeze-thaw kinetic model
     validation      Section 9: Validation report generator
+    empirical       Section 10: Empirical grounding layer (Payvand/Levin/cross-species)
 """
 
 from .substrate import (
@@ -29,13 +32,37 @@ from .substrate import (
     TopologyEventType,
 )
 from .mosaic import (
+    RewireAnalysis,
+    RewireCandidate,
+    SpectralAnalysis,
     TopologyComparison,
     TopologyMetrics,
+    analyze_spectral_properties,
     analyze_topology,
     build_ring_lattice,
     build_small_world,
     build_uniform_random,
     compare_topologies,
+    compute_graph_laplacian,
+    compute_spectral_gap,
+    compute_total_network_energy,
+    find_optimal_rewires,
+    rewire_sweep,
+)
+from .empirical import (
+    CROSS_SPECIES_TABLE,
+    EMPIRICAL_PARAMS,
+    LEVIN_SPEC,
+    MOSAIC_SPEC,
+    SPECTRAL_THRESHOLD,
+    BioelectricMemorySpec,
+    CrossSpeciesEntry,
+    EmpiricalParameters,
+    MosaicArchitectureSpec,
+    SpectralThresholdModel,
+    format_cross_species_table,
+    get_cross_species_table,
+    get_empirical_context,
 )
 from .denram import (
     AttractorState,
@@ -101,13 +128,36 @@ __all__ = [
     "TopologyEvent",
     "TopologyEventType",
     # Mosaic (S2)
+    "RewireAnalysis",
+    "RewireCandidate",
+    "SpectralAnalysis",
     "TopologyComparison",
     "TopologyMetrics",
+    "analyze_spectral_properties",
     "analyze_topology",
     "build_ring_lattice",
     "build_small_world",
     "build_uniform_random",
     "compare_topologies",
+    "compute_graph_laplacian",
+    "compute_spectral_gap",
+    "compute_total_network_energy",
+    "find_optimal_rewires",
+    "rewire_sweep",
+    # Empirical Grounding (S10)
+    "CROSS_SPECIES_TABLE",
+    "EMPIRICAL_PARAMS",
+    "LEVIN_SPEC",
+    "MOSAIC_SPEC",
+    "SPECTRAL_THRESHOLD",
+    "BioelectricMemorySpec",
+    "CrossSpeciesEntry",
+    "EmpiricalParameters",
+    "MosaicArchitectureSpec",
+    "SpectralThresholdModel",
+    "format_cross_species_table",
+    "get_cross_species_table",
+    "get_empirical_context",
     # DenRAM (S3)
     "AttractorState",
     "ChannelKinetics",
