@@ -1120,3 +1120,81 @@ class TestValidationUpdated:
         text = format_report(report)
         assert "Sensitivity" in text
         assert "Falsification" in text
+
+
+# ======================================================================
+# Section 13: Research Question Translator & Plain English
+# ======================================================================
+
+class TestResearchQuestions:
+    def test_detect_voltage_category(self):
+        from acheron.reasoning.research_questions import detect_research_category, ResearchCategory
+        cats = detect_research_category("What voltage turns on head regeneration?")
+        assert ResearchCategory.VOLTAGE_CONTROL in cats
+
+    def test_detect_damage_category(self):
+        from acheron.reasoning.research_questions import detect_research_category, ResearchCategory
+        cats = detect_research_category("Can damaged cells auto-heal and self-repair?")
+        assert ResearchCategory.DAMAGE_RESPONSE in cats
+
+    def test_detect_bio_storage_category(self):
+        from acheron.reasoning.research_questions import detect_research_category, ResearchCategory
+        cats = detect_research_category("Can planarians carry information like a hard drive?")
+        assert ResearchCategory.BIO_STORAGE in cats
+
+    def test_detect_timeline_category(self):
+        from acheron.reasoning.research_questions import detect_research_category, ResearchCategory
+        cats = detect_research_category("How long does regeneration take?")
+        assert ResearchCategory.REGENERATION_TIMELINE in cats
+
+    def test_detect_rewriting_category(self):
+        from acheron.reasoning.research_questions import detect_research_category, ResearchCategory
+        cats = detect_research_category("Can we rewrite the pattern to force regeneration on demand?")
+        assert ResearchCategory.PATTERN_REWRITING in cats
+
+    def test_translate_casual_query(self):
+        from acheron.reasoning.research_questions import translate_query
+        tq = translate_query("What voltage turns on head growth in worms?")
+        assert tq.category.value == "voltage_control"
+        assert "Vmem" in tq.scientific_query
+        assert len(tq.key_variables) > 0
+
+    def test_translate_storage_query(self):
+        from acheron.reasoning.research_questions import translate_query
+        tq = translate_query("Can worms store data like a hard drive and pass it on?")
+        assert tq.category.value == "bio_storage"
+        assert "T_hold" in tq.scientific_query
+
+    def test_format_translated_query(self):
+        from acheron.reasoning.research_questions import translate_query, format_translated_query
+        tq = translate_query("How long does it take after damage?")
+        text = format_translated_query(tq)
+        assert "RESEARCH QUESTION TRANSLATION" in text
+        assert "NEXUS QUERY" in text
+        assert "HYPOTHESIS TEMPLATE" in text
+
+    def test_is_casual_query(self):
+        from acheron.reasoning.research_questions import is_casual_query
+        assert is_casual_query("Can we turn on regeneration in worms?") is True
+        assert is_casual_query("eigenvalue stability analysis of Laplacian") is False
+
+    def test_plain_english_injection(self):
+        from acheron.reasoning.research_questions import get_plain_english_injection, ResearchCategory
+        text = get_plain_english_injection(ResearchCategory.VOLTAGE_CONTROL)
+        assert "WHAT THIS MEANS" in text
+        assert "CONFIDENCE LEVEL" in text
+
+    def test_casual_query_routes_to_tutor(self):
+        from acheron.rag.hypothesis_engine import detect_mode
+        from acheron.models import NexusMode
+        mode = detect_mode("Can we turn on head regeneration in worms?")
+        assert mode == NexusMode.TUTOR
+
+    def test_tutor_template_has_plain_english(self):
+        from acheron.rag.hypothesis_engine import get_mode_query_template
+        from acheron.models import NexusMode
+        template = get_mode_query_template(
+            NexusMode.TUTOR, fast=True,
+            query="Can worms store data like a hard drive and pass it on?"
+        )
+        assert "WHAT THIS MEANS" in template

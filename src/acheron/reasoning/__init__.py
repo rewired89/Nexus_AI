@@ -23,6 +23,7 @@ Modules:
     empirical       Section 10: Empirical grounding layer (Payvand/Levin/cross-species)
     sensitivity     Section 11: Parameter sensitivity analysis meta-layer
     falsification   Section 12: Falsification prediction registry
+    research_questions  Section 13: Research question translator & plain English layer
 """
 
 from .substrate import (
@@ -131,6 +132,14 @@ from .falsification import (
     format_falsification_report,
     run_falsification_analysis,
 )
+from .research_questions import (
+    ResearchCategory,
+    TranslatedQuery,
+    detect_research_category,
+    format_translated_query,
+    is_casual_query,
+    translate_query,
+)
 from .validation import (
     ValidationReport,
     format_report,
@@ -234,6 +243,13 @@ __all__ = [
     "PredictionStatus",
     "format_falsification_report",
     "run_falsification_analysis",
+    # Research Questions (S13)
+    "ResearchCategory",
+    "TranslatedQuery",
+    "detect_research_category",
+    "format_translated_query",
+    "is_casual_query",
+    "translate_query",
     # Validation (S9)
     "ValidationReport",
     "format_report",
