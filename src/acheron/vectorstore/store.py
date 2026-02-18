@@ -216,8 +216,14 @@ class VectorStore:
                 api_key=settings.embedding_api_key,
                 model_name=settings.embedding_model,
             )
-        else:
+        try:
             from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
             return SentenceTransformerEmbeddingFunction(
                 model_name=settings.embedding_model,
             )
+        except Exception:
+            logger.warning(
+                "SentenceTransformer model download failed, "
+                "falling back to ChromaDB default embedding function"
+            )
+            return chromadb.utils.embedding_functions.DefaultEmbeddingFunction()
