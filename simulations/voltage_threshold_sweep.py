@@ -79,12 +79,13 @@ v_mid  = -40 * mV
 Cm     = 10 * pF
 g_leak = 1 * nS
 dv_sc  = 15 * mV     # scales the cubic term
-k_bi   = -g_leak / (20 * mV)   # bistable strength (amp/volt^3 * volt)
+# k_bi has units amp/volt^2 so that k_bi*(v-a)*(v-b)*(v-c)/dv^2 → amp
+k_bi   = -g_leak / (20 * mV * mV)
 noise  = 2 * mV      # noise amplitude
 
 eqs = '''
-dv/dt = ( k_bi*(v - v_lo)*(v - v_hi)*(v - v_mid)/(dv_sc**2)
-          + I_gj + noise*xi*Hz**0.5 ) / Cm : volt
+dv/dt = ( k_bi*(v - v_lo)*(v - v_hi)*(v - v_mid)/(dv_sc**2) * (1*volt)
+          + I_gj + noise*xi*Hz**0.5 * g_leak ) / Cm : volt
 I_gj : amp
 '''
 
