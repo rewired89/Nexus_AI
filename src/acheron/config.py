@@ -95,6 +95,31 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Nexus-Interface settings
+    interface_port: int = Field(default=8100, alias="NEXUS_INTERFACE_PORT")
+    interface_host: str = Field(default="0.0.0.0", alias="NEXUS_INTERFACE_HOST")
+    whisper_model: str = Field(
+        default="base", alias="NEXUS_WHISPER_MODEL",
+        description="Whisper model size: tiny, base, small, medium, large-v3",
+    )
+    whisper_device: str = Field(
+        default="auto", alias="NEXUS_WHISPER_DEVICE",
+        description="Whisper device: auto, cpu, cuda",
+    )
+    piper_model_path: str = Field(
+        default="", alias="NEXUS_PIPER_MODEL",
+        description="Path to Piper ONNX voice model (empty = disabled)",
+    )
+    elevenlabs_api_key: str = Field(default="", alias="ELEVENLABS_API_KEY")
+    elevenlabs_voice_id: str = Field(
+        default="21m00Tcm4TlvDq8ikWAM", alias="ELEVENLABS_VOICE_ID",
+        description="ElevenLabs voice ID (default: Rachel)",
+    )
+    nexus_session_path: str = Field(
+        default="data/nexus_session.json", alias="NEXUS_SESSION_PATH",
+        description="Path to persistent session memory file",
+    )
+
     model_config = {
         "env_file": str(_PROJECT_ROOT / ".env"),
         "env_file_encoding": "utf-8",

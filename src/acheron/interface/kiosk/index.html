@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>NEXUS — Acheron Interface</title>
+    <link rel="stylesheet" href="/kiosk/style.css">
+    <!-- Inter font for UI -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="nexus-container">
+
+        <!-- Header -->
+        <header class="nexus-header">
+            <h1>NEXUS</h1>
+            <div class="status-bar">
+                <span>
+                    <span class="status-dot inactive" id="status-dot"></span>
+                    <span id="status-text">Connecting...</span>
+                </span>
+                <span>Acheron Research Interface</span>
+            </div>
+        </header>
+
+        <!-- Avatar panel (left) -->
+        <div class="avatar-panel">
+            <canvas id="avatar-canvas"></canvas>
+            <div class="avatar-glow" id="avatar-glow"></div>
+            <span class="avatar-state-label" id="avatar-state-label">idle</span>
+        </div>
+
+        <!-- Response panel (right) -->
+        <div class="response-panel" id="response-panel">
+            <div class="message system">
+                <span class="label mode">NEXUS</span>
+                <div>
+                    Acheron Nexus Interface online.<br>
+                    Speak or type your research query below.<br>
+                    <br>
+                    Modes: <strong>Analyze</strong> (hypothesis engine),
+                    <strong>Discover</strong> (full discovery loop),
+                    <strong>Query</strong> (standard RAG).
+                </div>
+            </div>
+        </div>
+
+        <!-- Input bar (bottom) -->
+        <div class="input-bar">
+            <button class="btn mic" id="mic-btn" title="Hold to speak">&#127897;</button>
+
+            <input type="text"
+                   id="query-input"
+                   placeholder="Ask Acheron anything... (Enter to send)"
+                   autocomplete="off"
+                   spellcheck="false">
+
+            <select class="mode-select" id="mode-select" title="Query mode">
+                <option value="analyze">Analyze</option>
+                <option value="discover">Discover</option>
+                <option value="query">Query</option>
+            </select>
+
+            <button class="btn primary" id="send-btn">Send</button>
+        </div>
+
+    </div>
+
+    <script src="/kiosk/app.js"></script>
+</body>
+</html>

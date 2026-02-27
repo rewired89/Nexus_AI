@@ -64,6 +64,14 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.4.0",
 ]
+interface = [
+    # Whisper STT (choose one)
+    "faster-whisper>=1.0.0",
+    # Piper TTS (local)
+    "piper-tts>=1.2.0",
+    # WebSocket support (already in fastapi/uvicorn[standard], listed for clarity)
+    "websockets>=12.0",
+]
 
 [project.scripts]
 acheron = "acheron.cli:main"

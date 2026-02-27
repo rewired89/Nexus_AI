@@ -1083,5 +1083,60 @@ def serve(host: str | None, port: int | None) -> None:
     )
 
 
+# ======================================================================
+# INTERFACE — Nexus voice/avatar kiosk
+# ======================================================================
+@main.command()
+@click.option("--host", default=None, help="Override interface host")
+@click.option("--port", "-p", default=None, type=int, help="Override interface port")
+@click.option("--whisper-model", default=None, help="Whisper model size (tiny/base/small/medium/large-v3)")
+@click.option("--whisper-device", default=None, help="Whisper device (auto/cpu/cuda)")
+@click.option("--piper-model", default=None, help="Path to Piper TTS ONNX model")
+def interface(
+    host: str | None,
+    port: int | None,
+    whisper_model: str | None,
+    whisper_device: str | None,
+    piper_model: str | None,
+) -> None:
+    """Start the Nexus voice/avatar interface (Arthur layer).
+
+    Launches a WebSocket server with the kiosk frontend for voice-driven
+    interaction with Acheron's RAG pipeline.  Supports Whisper STT and
+    Piper/ElevenLabs TTS.
+
+    Open the displayed URL in a browser (or Chromium kiosk mode) to
+    interact with the fullscreen interface.
+    """
+    import uvicorn
+
+    from acheron.config import get_settings
+    from acheron.interface.ws_server import create_interface_app
+
+    settings = get_settings()
+    app = create_interface_app(
+        stt_model=whisper_model or settings.whisper_model,
+        stt_device=whisper_device or settings.whisper_device,
+        piper_model=piper_model or settings.piper_model_path,
+        elevenlabs_key=settings.elevenlabs_api_key,
+        elevenlabs_voice=settings.elevenlabs_voice_id,
+        session_path=settings.nexus_session_path,
+    )
+
+    bind_host = host or settings.interface_host
+    bind_port = port or settings.interface_port
+    console.print(Panel(
+        f"[bold cyan]NEXUS Interface[/bold cyan]\n"
+        f"Kiosk:  http://{bind_host}:{bind_port}/\n"
+        f"WebSocket:  ws://{bind_host}:{bind_port}/ws\n"
+        f"Whisper: {whisper_model or settings.whisper_model}\n"
+        f"TTS: {'Piper' if (piper_model or settings.piper_model_path) else 'ElevenLabs' if settings.elevenlabs_api_key else 'disabled'}",
+        title="Starting Interface",
+        border_style="cyan",
+    ))
+
+    uvicorn.run(app, host=bind_host, port=bind_port, reload=False)
+
+
 if __name__ == "__main__":
     main()
