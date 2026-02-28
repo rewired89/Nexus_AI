@@ -32,14 +32,16 @@ let vadState = "silence"; // "silence" | "speech" | "trailing"
 let speechBuffer = [];    // collected Float32 chunks during speech
 let silenceFrames = 0;
 let speechFrames = 0;
-const VAD_SPEECH_THRESHOLD = 0.015;  // RMS threshold to detect speech
+const VAD_SPEECH_THRESHOLD = 0.008;  // RMS threshold to detect speech (sensitive)
 const VAD_SPEECH_START_FRAMES = 3;   // consecutive frames above threshold to start
-const VAD_SPEECH_END_FRAMES = 15;    // consecutive frames below threshold to end (~750ms)
+const VAD_SPEECH_END_FRAMES = 70;    // consecutive frames below threshold to end (~3s at 48kHz)
 const VAD_FRAME_SIZE = 2048;         // samples per analysis frame
 
 // Playback state
 let currentAudio = null;
 let isSpeaking = false; // Nexus is speaking
+let sttAvailable = false; // server has STT ready
+let micEnabledByUser = false; // user has clicked mic at least once
 
 // DOM references (set in DOMContentLoaded)
 let responsePanel, queryInput, micBtn, sendBtn, modeSelect, voiceSelect;
@@ -58,6 +60,10 @@ function connect() {
 
     ws.onopen = () => {
         setStatus("active", "Connected");
+        // Re-enable mic on reconnect if user had it on.
+        if (micEnabledByUser && !micActive) {
+            startMic();
+        }
     };
 
     ws.onclose = () => {
@@ -91,9 +97,9 @@ function handleMessage(msg) {
     switch (msg.type) {
         case "status":
             setStatus("active", msg.message);
-            // Auto-start mic when connected if STT is available.
-            if (msg.stt_available && !micActive) {
-                startMic();
+            // Flag that STT is ready — mic will start on first user click.
+            if (msg.stt_available) {
+                sttAvailable = true;
             }
             break;
 
@@ -279,6 +285,12 @@ async function startMic() {
         });
 
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Critical: resume AudioContext (browsers suspend it until user gesture).
+        if (audioCtx.state === "suspended") {
+            await audioCtx.resume();
+        }
+
         const source = audioCtx.createMediaStreamSource(micStream);
 
         // Analyser for VAD (RMS energy detection).
@@ -298,12 +310,16 @@ async function startMic() {
         silenceFrames = 0;
         speechFrames = 0;
 
+        console.log(`Mic active — sample rate: ${audioCtx.sampleRate}Hz, ` +
+            `frame: ${VAD_FRAME_SIZE} samples (${(VAD_FRAME_SIZE / audioCtx.sampleRate * 1000).toFixed(0)}ms), ` +
+            `silence timeout: ${(VAD_SPEECH_END_FRAMES * VAD_FRAME_SIZE / audioCtx.sampleRate).toFixed(1)}s`);
+
         if (micBtn) {
             micBtn.classList.add("active");
             micBtn.title = "Microphone active (click to mute)";
         }
         setListeningActive(true);
-        setStatus("active", "Listening...");
+        setStatus("active", "Listening — speak naturally");
     } catch (err) {
         console.error("Microphone access denied:", err);
         setStatus("error", "Microphone access denied");
@@ -342,8 +358,10 @@ function stopMic() {
 function toggleMic() {
     if (micActive) {
         stopMic();
+        micEnabledByUser = false;
         setStatus("active", "Microphone muted");
     } else {
+        micEnabledByUser = true;
         startMic();
     }
 }
@@ -370,6 +388,7 @@ function onAudioProcess(e) {
                 speechBuffer = [];
                 setListeningActive(false);
                 setAvatarState("listening");
+                setStatus("active", "Hearing you...");
 
                 // If Nexus is speaking, interrupt.
                 if (isSpeaking) {
@@ -382,7 +401,7 @@ function onAudioProcess(e) {
         } else {
             speechFrames = 0;
         }
-        // Buffer a few frames before speech start for smooth capture.
+        // Buffer a few pre-speech frames so the start of the word isn't clipped.
         if (speechFrames > 0) {
             speechBuffer.push(new Float32Array(input));
         }
@@ -391,15 +410,23 @@ function onAudioProcess(e) {
 
         if (rms < VAD_SPEECH_THRESHOLD) {
             silenceFrames++;
+            // Show countdown so user knows when it'll send.
+            const framesLeft = VAD_SPEECH_END_FRAMES - silenceFrames;
+            const secsLeft = (framesLeft * VAD_FRAME_SIZE / (audioCtx ? audioCtx.sampleRate : 48000)).toFixed(1);
+            if (silenceFrames % 10 === 0 && framesLeft > 0) {
+                setStatus("active", `Pause detected... processing in ${secsLeft}s`);
+            }
             if (silenceFrames >= VAD_SPEECH_END_FRAMES) {
                 // Speech ended — send the segment.
                 vadState = "silence";
                 speechFrames = 0;
                 silenceFrames = 0;
+                setStatus("active", "Processing your question...");
                 sendSpeechSegment();
             }
         } else {
             silenceFrames = 0;
+            setStatus("active", "Hearing you...");
         }
     }
 }
