@@ -404,6 +404,13 @@ class TestTTSEngines:
         el = ElevenLabsTTS(api_key="test-key-123")
         assert el.available
 
+    def test_elevenlabs_set_voice(self):
+        from acheron.interface.voice.tts import ElevenLabsTTS
+        el = ElevenLabsTTS(api_key="test-key")
+        assert el.voice_id == "ErXwobaYiN019PkySvjV"  # Antoni (new default)
+        el.set_voice("21m00Tcm4TlvDq8ikWAM")  # Rachel
+        assert el.voice_id == "21m00Tcm4TlvDq8ikWAM"
+
     def test_create_tts_engine_no_backends(self):
         from acheron.interface.voice.tts import create_tts_engine
         with pytest.raises(RuntimeError, match="No TTS engine available"):
@@ -411,8 +418,82 @@ class TestTTSEngines:
 
 
 # ======================================================================
+# Voice Profiles (voice/tts.py)
+# ======================================================================
+
+class TestVoiceProfiles:
+
+    def test_profiles_exist(self):
+        from acheron.interface.voice.tts import VOICE_PROFILES, DEFAULT_VOICE
+        assert "male" in VOICE_PROFILES
+        assert "female" in VOICE_PROFILES
+        assert DEFAULT_VOICE in VOICE_PROFILES
+
+    def test_profile_structure(self):
+        from acheron.interface.voice.tts import VOICE_PROFILES
+        for pid, profile in VOICE_PROFILES.items():
+            assert profile.id == pid
+            assert profile.label
+            assert profile.elevenlabs_voice_id
+            assert profile.piper_model_name
+            assert profile.description
+
+    def test_male_and_female_different_voices(self):
+        from acheron.interface.voice.tts import VOICE_PROFILES
+        male = VOICE_PROFILES["male"]
+        female = VOICE_PROFILES["female"]
+        assert male.elevenlabs_voice_id != female.elevenlabs_voice_id
+        assert male.piper_model_name != female.piper_model_name
+
+    def test_default_voice_is_male(self):
+        from acheron.interface.voice.tts import DEFAULT_VOICE
+        assert DEFAULT_VOICE == "male"
+
+
+# ======================================================================
 # WebSocket Server (ws_server.py)
 # ======================================================================
+
+class TestInterruptDetection:
+
+    def test_stop_is_interrupt(self):
+        from acheron.interface.ws_server import is_interrupt_command
+        assert is_interrupt_command("stop")
+        assert is_interrupt_command("Stop")
+        assert is_interrupt_command("STOP")
+
+    def test_nexus_stop_is_interrupt(self):
+        from acheron.interface.ws_server import is_interrupt_command
+        assert is_interrupt_command("nexus stop")
+        assert is_interrupt_command("Nexus stop")
+
+    def test_quiet_variants(self):
+        from acheron.interface.ws_server import is_interrupt_command
+        assert is_interrupt_command("be quiet")
+        assert is_interrupt_command("quiet")
+        assert is_interrupt_command("enough")
+
+    def test_cancel_and_wait(self):
+        from acheron.interface.ws_server import is_interrupt_command
+        assert is_interrupt_command("cancel")
+        assert is_interrupt_command("hold on")
+        assert is_interrupt_command("wait")
+        assert is_interrupt_command("never mind")
+        assert is_interrupt_command("nevermind")
+
+    def test_long_query_not_interrupt(self):
+        from acheron.interface.ws_server import is_interrupt_command
+        # More than 4 words → not treated as interrupt even if it contains "stop".
+        assert not is_interrupt_command(
+            "Can you stop and explain the bioelectric mechanism?"
+        )
+
+    def test_normal_query_not_interrupt(self):
+        from acheron.interface.ws_server import is_interrupt_command
+        assert not is_interrupt_command("What is Vmem?")
+        assert not is_interrupt_command("Tell me about planarians")
+        assert not is_interrupt_command("")
+
 
 class TestWSServer:
 
@@ -420,7 +501,6 @@ class TestWSServer:
         from acheron.interface.ws_server import create_interface_app
         app = create_interface_app()
         assert app.title == "Nexus Interface"
-        # Should have routes.
         routes = [r.path for r in app.routes]
         assert "/" in routes
         assert "/ws" in routes

@@ -8,6 +8,11 @@ Two engines:
 
 Both produce 16-bit PCM WAV audio suitable for browser playback and
 avatar lip-sync amplitude extraction.
+
+Voice profiles:
+
+Two built-in profiles ("male" and "female") are available for both
+engines.  The user can switch mid-session via the kiosk UI.
 """
 
 from __future__ import annotations
@@ -17,11 +22,47 @@ import logging
 import math
 import struct
 import wave
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Protocol
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Voice profiles
+# ---------------------------------------------------------------------------
+
+@dataclass
+class VoiceProfile:
+    """Named voice configuration."""
+
+    id: str                     # internal key ("male", "female")
+    label: str                  # display name
+    elevenlabs_voice_id: str    # ElevenLabs voice ID
+    piper_model_name: str       # Piper model stem (e.g. "en_US-lessac-medium")
+    description: str = ""
+
+
+# Two default profiles — soft male, warm female.
+VOICE_PROFILES: dict[str, VoiceProfile] = {
+    "male": VoiceProfile(
+        id="male",
+        label="Nexus (Male)",
+        elevenlabs_voice_id="ErXwobaYiN019PkySvjV",   # Antoni — soft, young
+        piper_model_name="en_US-lessac-medium",
+        description="Calm, soft male voice",
+    ),
+    "female": VoiceProfile(
+        id="female",
+        label="Nexus (Female)",
+        elevenlabs_voice_id="21m00Tcm4TlvDq8ikWAM",   # Rachel — warm, neutral
+        piper_model_name="en_US-amy-medium",
+        description="Warm, professional female voice",
+    ),
+}
+
+DEFAULT_VOICE = "male"
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +208,12 @@ class PiperTTS:
             self._available = False
         return self._available
 
+    def set_voice(self, model_path: str | Path) -> None:
+        """Switch to a different Piper voice model."""
+        self.model_path = Path(model_path)
+        self._voice = None
+        self._available = None
+
     def _ensure_voice(self) -> None:
         if self._voice is not None:
             return
@@ -208,7 +255,7 @@ class ElevenLabsTTS:
     api_key : str
         ElevenLabs API key.
     voice_id : str
-        Voice ID to use.  Defaults to "Rachel" (a neutral female voice).
+        Voice ID to use.  Defaults to "Antoni" (a soft male voice).
     model_id : str
         ElevenLabs model.  ``eleven_monolingual_v1`` is fastest.
     """
@@ -216,7 +263,7 @@ class ElevenLabsTTS:
     def __init__(
         self,
         api_key: str = "",
-        voice_id: str = "21m00Tcm4TlvDq8ikWAM",  # Rachel
+        voice_id: str = "ErXwobaYiN019PkySvjV",  # Antoni
         model_id: str = "eleven_monolingual_v1",
     ) -> None:
         self.api_key = api_key
@@ -230,6 +277,10 @@ class ElevenLabsTTS:
             return self._available
         self._available = bool(self.api_key)
         return self._available
+
+    def set_voice(self, voice_id: str) -> None:
+        """Switch to a different ElevenLabs voice."""
+        self.voice_id = voice_id
 
     def synthesize(self, text: str) -> bytes:
         """Synthesize text to WAV bytes via ElevenLabs API."""
@@ -265,7 +316,8 @@ class ElevenLabsTTS:
 def create_tts_engine(
     piper_model: str = "",
     elevenlabs_key: str = "",
-    elevenlabs_voice: str = "21m00Tcm4TlvDq8ikWAM",
+    elevenlabs_voice: str = "",
+    voice_profile: str = DEFAULT_VOICE,
 ) -> TTSEngine:
     """Create the best available TTS engine.
 
@@ -273,16 +325,19 @@ def create_tts_engine(
     the library is installed.  Falls back to ElevenLabs if an API key
     is set.  Raises RuntimeError if neither is available.
     """
+    profile = VOICE_PROFILES.get(voice_profile, VOICE_PROFILES[DEFAULT_VOICE])
+
     if piper_model:
         piper = PiperTTS(model_path=piper_model)
         if piper.available:
-            logger.info("Using Piper TTS (local)")
+            logger.info("Using Piper TTS (local) — %s", profile.label)
             return piper  # type: ignore[return-value]
 
+    voice_id = elevenlabs_voice or profile.elevenlabs_voice_id
     if elevenlabs_key:
-        el = ElevenLabsTTS(api_key=elevenlabs_key, voice_id=elevenlabs_voice)
+        el = ElevenLabsTTS(api_key=elevenlabs_key, voice_id=voice_id)
         if el.available:
-            logger.info("Using ElevenLabs TTS (cloud)")
+            logger.info("Using ElevenLabs TTS (cloud) — %s", profile.label)
             return el  # type: ignore[return-value]
 
     raise RuntimeError(

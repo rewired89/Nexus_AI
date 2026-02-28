@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>NEXUS — Acheron Interface</title>
     <link rel="stylesheet" href="/kiosk/style.css">
-    <!-- Inter font for UI -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -17,11 +16,14 @@
         <header class="nexus-header">
             <h1>NEXUS</h1>
             <div class="status-bar">
+                <span class="listening-badge" id="listening-indicator">
+                    <span class="pulse-ring"></span>
+                    LISTENING
+                </span>
                 <span>
                     <span class="status-dot inactive" id="status-dot"></span>
                     <span id="status-text">Connecting...</span>
                 </span>
-                <span>Acheron Research Interface</span>
             </div>
         </header>
 
@@ -37,23 +39,29 @@
             <div class="message system">
                 <span class="label mode">NEXUS</span>
                 <div>
-                    Acheron Nexus Interface online.<br>
-                    Speak or type your research query below.<br>
+                    I'm listening. Just speak naturally and I'll respond.<br>
+                    Say <strong>"stop"</strong> or <strong>"Nexus stop"</strong> to interrupt me.<br>
                     <br>
-                    Modes: <strong>Analyze</strong> (hypothesis engine),
-                    <strong>Discover</strong> (full discovery loop),
-                    <strong>Query</strong> (standard RAG).
+                    You can also type below, or switch between
+                    <strong>Analyze</strong>, <strong>Discover</strong>, and <strong>Query</strong> modes.
                 </div>
             </div>
         </div>
 
         <!-- Input bar (bottom) -->
         <div class="input-bar">
-            <button class="btn mic" id="mic-btn" title="Hold to speak">&#127897;</button>
+            <button class="btn mic active" id="mic-btn" title="Microphone active (click to mute)">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+            </button>
 
             <input type="text"
                    id="query-input"
-                   placeholder="Ask Acheron anything... (Enter to send)"
+                   placeholder="Or type your question here... (Enter to send)"
                    autocomplete="off"
                    spellcheck="false">
 
@@ -61,6 +69,11 @@
                 <option value="analyze">Analyze</option>
                 <option value="discover">Discover</option>
                 <option value="query">Query</option>
+            </select>
+
+            <select class="mode-select" id="voice-select" title="Voice">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
             </select>
 
             <button class="btn primary" id="send-btn">Send</button>
