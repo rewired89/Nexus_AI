@@ -1,5 +1,5 @@
 /**
- * Nexus Kiosk — Conversational voice interface for Acheron.
+ * Nexus Kiosk — Conversational voice interface for Nexus.
  *
  * Uses the browser's built-in SpeechRecognition API for real-time
  * speech-to-text (like ChatGPT voice mode).  No server-side STT needed.

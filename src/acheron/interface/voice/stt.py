@@ -1,4 +1,4 @@
-"""Whisper-based speech-to-text for the Nexus interface.
+"""Whisper-based speech-to-text fallback for the Nexus interface.
 
 Supports two backends:
 

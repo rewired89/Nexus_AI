@@ -1,4 +1,4 @@
-"""FastAPI web application for Acheron Nexus — bioelectric research intelligence."""
+"""FastAPI web application for Nexus — bioelectric research intelligence."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from acheron.vectorstore.store import VectorStore
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Acheron Nexus", version="0.2.0")
+app = FastAPI(title="Nexus", version="0.2.0")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 # Lazy singletons

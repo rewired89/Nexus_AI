@@ -1,4 +1,4 @@
-"""WebSocket server bridging voice I/O to Acheron's RAG pipeline.
+"""WebSocket server bridging voice I/O to the Nexus RAG pipeline.
 
 Runs as a FastAPI application.  The kiosk frontend connects over a
 single WebSocket and exchanges JSON + binary audio frames.
@@ -42,6 +42,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -118,9 +119,10 @@ def create_interface_app(
         stt._backend, stt.available,
     )
     if not stt.available:
-        logger.error(
-            "STT is NOT available — voice input will be disabled. "
-            "Install faster-whisper: pip install faster-whisper"
+        logger.info(
+            "Server-side Whisper STT not installed — this is fine. "
+            "The browser handles speech recognition via the Web Speech API. "
+            "Use Chrome or Edge for best support."
         )
     memory = SessionMemory(path=session_path)
     avatar = AvatarController()
@@ -149,6 +151,16 @@ def create_interface_app(
             logger.info("RAG pipeline initialized")
         return _pipeline_cache["p"]
 
+    # ---- no-cache middleware for kiosk static assets ----
+    @app.middleware("http")
+    async def no_cache_kiosk_assets(request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/kiosk/"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
     # ---- kiosk static files ----
     if _KIOSK_DIR.is_dir():
         app.mount(
@@ -157,14 +169,21 @@ def create_interface_app(
             name="kiosk",
         )
 
+    # Cache-bust token — changes every server restart so browsers
+    # never serve stale app.js / style.css after a code update.
+    _cache_bust = str(int(time.time()))
+
     @app.get("/")
     async def index():
-        """Serve the kiosk frontend (no-cache to ensure fresh JS/CSS)."""
+        """Serve the kiosk frontend with cache-busting asset URLs."""
         index_path = _KIOSK_DIR / "index.html"
         if index_path.exists():
-            return FileResponse(
-                str(index_path),
-                media_type="text/html",
+            html = index_path.read_text()
+            # Replace static version tags with a per-restart timestamp
+            html = html.replace("app.js?v=3", f"app.js?v={_cache_bust}")
+            html = html.replace("style.css?v=3", f"style.css?v={_cache_bust}")
+            return HTMLResponse(
+                content=html,
                 headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
             )
         return HTMLResponse("<h1>Nexus Interface</h1><p>Kiosk frontend not found.</p>")
@@ -250,9 +269,12 @@ def create_interface_app(
                         await send_json({
                             "type": "error",
                             "message": (
-                                "Server-side STT unavailable. "
-                                "Please reload the page (Ctrl+Shift+R) to use "
-                                "browser-based voice recognition."
+                                "Your browser is sending audio to the server, but "
+                                "server-side Whisper is not installed. This means "
+                                "you're running a cached version of the interface. "
+                                "Please hard-refresh (Ctrl+Shift+R / Cmd+Shift+R) "
+                                "to load the current version, which uses your "
+                                "browser's built-in speech recognition instead."
                             ),
                         })
                         await signal_listening()
