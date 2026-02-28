@@ -14,6 +14,7 @@ WAV) and return transcribed text.
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import logging
 import struct
@@ -28,27 +29,29 @@ logger = logging.getLogger(__name__)
 # Backend detection
 # ---------------------------------------------------------------------------
 
-_BACKEND: Optional[str] = None
-
 
 def _detect_backend() -> str:
-    global _BACKEND
-    if _BACKEND is not None:
-        return _BACKEND
-    try:
-        import faster_whisper  # noqa: F401
-        _BACKEND = "faster_whisper"
-        return _BACKEND
-    except ImportError:
-        pass
-    try:
-        import whisper  # noqa: F401
-        _BACKEND = "openai_whisper"
-        return _BACKEND
-    except ImportError:
-        pass
-    _BACKEND = "none"
-    return _BACKEND
+    """Detect which Whisper backend is installed.
+
+    Uses ``importlib.util.find_spec`` to check for package availability
+    without actually importing. This avoids hangs caused by heavy native
+    libraries (e.g. ctranslate2 loading CUDA) during detection.
+
+    The real import happens lazily in :meth:`WhisperSTT._ensure_model`.
+    """
+    if importlib.util.find_spec("faster_whisper") is not None:
+        logger.info("STT backend: faster-whisper (detected via find_spec)")
+        return "faster_whisper"
+
+    if importlib.util.find_spec("whisper") is not None:
+        logger.info("STT backend: openai-whisper (detected via find_spec)")
+        return "openai_whisper"
+
+    logger.warning(
+        "No Whisper backend found. Install faster-whisper or openai-whisper. "
+        "STT will be unavailable."
+    )
+    return "none"
 
 
 # ---------------------------------------------------------------------------
@@ -116,20 +119,31 @@ class WhisperSTT:
         self.language = language
         self._model: object = None
         self._backend = _detect_backend()
-
-        if self._backend == "none":
-            logger.warning(
-                "No Whisper backend found. Install faster-whisper or "
-                "openai-whisper. STT will return empty strings."
-            )
+        logger.info("WhisperSTT initialized — backend=%s, available=%s", self._backend, self.available)
 
     def _ensure_model(self) -> None:
-        """Lazy-load the model on first use."""
+        """Lazy-load the model on first use.
+
+        The heavy ``import`` of the backend library happens here (not at
+        detection time) to avoid blocking server startup when native
+        libraries are slow to load.  If the import fails, the backend is
+        downgraded to ``"none"`` so subsequent calls return empty strings
+        instead of retrying the broken import.
+        """
         if self._model is not None:
             return
 
         if self._backend == "faster_whisper":
-            from faster_whisper import WhisperModel  # type: ignore[import-untyped]
+            try:
+                from faster_whisper import WhisperModel  # type: ignore[import-untyped]
+            except Exception as exc:
+                logger.error(
+                    "faster-whisper import failed at model load (%s: %s). "
+                    "Falling back to unavailable.",
+                    type(exc).__name__, exc,
+                )
+                self._backend = "none"
+                return
 
             device = self.device
             if device == "auto":
@@ -148,7 +162,16 @@ class WhisperSTT:
             )
 
         elif self._backend == "openai_whisper":
-            import whisper  # type: ignore[import-untyped]
+            try:
+                import whisper  # type: ignore[import-untyped]
+            except Exception as exc:
+                logger.error(
+                    "openai-whisper import failed at model load (%s: %s). "
+                    "Falling back to unavailable.",
+                    type(exc).__name__, exc,
+                )
+                self._backend = "none"
+                return
 
             device = self.device
             if device == "auto":

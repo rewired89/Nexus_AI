@@ -111,6 +111,15 @@ def create_interface_app(
 
     # ---- shared state (created once, shared across connections) ----
     stt = WhisperSTT(model_size=stt_model, device=stt_device)
+    logger.info(
+        "Nexus STT status: backend=%s, available=%s",
+        stt._backend, stt.available,
+    )
+    if not stt.available:
+        logger.error(
+            "STT is NOT available — voice input will be disabled. "
+            "Install faster-whisper: pip install faster-whisper"
+        )
     memory = SessionMemory(path=session_path)
     avatar = AvatarController()
 
@@ -159,6 +168,7 @@ def create_interface_app(
         return {
             "status": "ok",
             "stt_available": stt.available,
+            "stt_backend": stt._backend,
             "tts_available": len(tts_engines) > 0,
             "voices": list(tts_engines.keys()),
             "session_turns": memory.turn_count,
