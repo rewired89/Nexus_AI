@@ -46,8 +46,10 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware import Middleware
 
 from acheron.interface.avatar.renderer import (
     AvatarController,
@@ -157,10 +159,14 @@ def create_interface_app(
 
     @app.get("/")
     async def index():
-        """Serve the kiosk frontend."""
+        """Serve the kiosk frontend (no-cache to ensure fresh JS/CSS)."""
         index_path = _KIOSK_DIR / "index.html"
         if index_path.exists():
-            return FileResponse(str(index_path), media_type="text/html")
+            return FileResponse(
+                str(index_path),
+                media_type="text/html",
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
         return HTMLResponse("<h1>Nexus Interface</h1><p>Kiosk frontend not found.</p>")
 
     @app.get("/health")
@@ -243,7 +249,11 @@ def create_interface_app(
                     if not stt.available:
                         await send_json({
                             "type": "error",
-                            "message": "STT not available — type your query instead.",
+                            "message": (
+                                "Server-side STT unavailable. "
+                                "Please reload the page (Ctrl+Shift+R) to use "
+                                "browser-based voice recognition."
+                            ),
                         })
                         await signal_listening()
                         continue
