@@ -1,11 +1,14 @@
 /**
  * Nexus Kiosk — Conversational voice interface for Acheron.
  *
- * Designed for continuous, natural interaction like Arthur/Otto:
- *   - Always-on microphone with voice activity detection (VAD)
- *   - Automatic speech segmentation (speak → pause → process)
- *   - Say "stop" or "Nexus stop" to interrupt
- *   - Speaking over Nexus interrupts current response
+ * Uses the browser's built-in SpeechRecognition API for real-time
+ * speech-to-text (like ChatGPT voice mode).  No server-side STT needed.
+ *
+ *   - Click mic → browser starts listening continuously
+ *   - Words appear in real-time as you speak (interim results)
+ *   - Pause speaking → final transcript sent to server → response
+ *   - Say "stop" / "Nexus stop" to interrupt
+ *   - Speak over Nexus to interrupt playback
  *   - Two voice profiles: male (soft) and female (warm)
  *   - Text input fallback always available
  */
@@ -20,33 +23,265 @@ let ws = null;
 let avatarState = "idle";
 let avatarParams = {};
 
-// Audio state
-let micStream = null;
-let audioCtx = null;
-let analyserNode = null;
-let processorNode = null;
+// Speech recognition
+let recognition = null;
 let micActive = false;
+let micEnabledByUser = false;
+let isRecognizing = false;
 
-// VAD state
-let vadState = "silence"; // "silence" | "speech" | "trailing"
-let speechBuffer = [];    // collected Float32 chunks during speech
-let silenceFrames = 0;
-let speechFrames = 0;
-const VAD_SPEECH_THRESHOLD = 0.008;  // RMS threshold to detect speech (sensitive)
-const VAD_SPEECH_START_FRAMES = 3;   // consecutive frames above threshold to start
-const VAD_SPEECH_END_FRAMES = 70;    // consecutive frames below threshold to end (~3s at 48kHz)
-const VAD_FRAME_SIZE = 2048;         // samples per analysis frame
+// Transcript assembly
+let interimTranscript = "";
+let finalTranscript = "";
+let silenceTimer = null;
+const SILENCE_TIMEOUT_MS = 2000; // 2s pause → send query
 
 // Playback state
 let currentAudio = null;
 let isSpeaking = false; // Nexus is speaking
-let sttAvailable = false; // server has STT ready
-let micEnabledByUser = false; // user has clicked mic at least once
 
 // DOM references (set in DOMContentLoaded)
 let responsePanel, queryInput, micBtn, sendBtn, modeSelect, voiceSelect;
 let statusDot, statusText, avatarCanvas, avatarLabel, avatarGlow;
-let listeningIndicator;
+let listeningIndicator, interimDisplay;
+
+// ---------------------------------------------------------------------------
+// Browser SpeechRecognition setup
+// ---------------------------------------------------------------------------
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function initSpeechRecognition() {
+    if (!SpeechRecognition) {
+        console.warn("SpeechRecognition API not supported in this browser");
+        setStatus("error", "Voice not supported — use Chrome, Edge, or Safari");
+        return false;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+        isRecognizing = true;
+        console.log("SpeechRecognition started");
+    };
+
+    recognition.onresult = (event) => {
+        interimTranscript = "";
+        finalTranscript = "";
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                finalTranscript += transcript;
+            } else {
+                interimTranscript += transcript;
+            }
+        }
+
+        // Show interim text in real-time (like ChatGPT).
+        showInterimTranscript(interimTranscript || finalTranscript);
+        setAvatarState("listening");
+        setStatus("active", "Hearing you...");
+
+        // If Nexus is currently speaking and user talks, interrupt.
+        if (isSpeaking && (interimTranscript.length > 3 || finalTranscript.length > 0)) {
+            stopAudio();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "interrupt" }));
+            }
+        }
+
+        // Reset silence timer — user is still talking.
+        clearSilenceTimer();
+
+        if (finalTranscript) {
+            // Browser gave us a final result — process it.
+            onSpeechFinalized(finalTranscript.trim());
+        } else {
+            // Still interim — start silence timer.
+            startSilenceTimer();
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error("SpeechRecognition error:", event.error);
+
+        if (event.error === "not-allowed") {
+            setStatus("error", "Microphone access denied");
+            stopMic();
+            return;
+        }
+
+        if (event.error === "no-speech") {
+            // Normal — just means silence, restart.
+            return;
+        }
+
+        if (event.error === "network") {
+            setStatus("error", "Speech recognition network error — retrying...");
+        }
+
+        // For aborted/other errors, will auto-restart via onend.
+    };
+
+    recognition.onend = () => {
+        isRecognizing = false;
+        console.log("SpeechRecognition ended");
+
+        // Auto-restart if mic should be active (continuous mode).
+        if (micActive && micEnabledByUser) {
+            try {
+                recognition.start();
+            } catch (e) {
+                console.warn("Failed to restart recognition:", e);
+                setTimeout(() => {
+                    if (micActive && micEnabledByUser) {
+                        try { recognition.start(); } catch (e2) { /* give up */ }
+                    }
+                }, 500);
+            }
+        }
+    };
+
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Silence timer — sends the query after user pauses
+// ---------------------------------------------------------------------------
+
+function startSilenceTimer() {
+    clearSilenceTimer();
+    silenceTimer = setTimeout(() => {
+        // User stopped talking — send whatever interim text we have.
+        if (interimTranscript.trim()) {
+            onSpeechFinalized(interimTranscript.trim());
+            interimTranscript = "";
+        }
+    }, SILENCE_TIMEOUT_MS);
+}
+
+function clearSilenceTimer() {
+    if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Speech finalized — send to server
+// ---------------------------------------------------------------------------
+
+function onSpeechFinalized(text) {
+    clearSilenceTimer();
+    hideInterimTranscript();
+
+    if (!text) return;
+
+    // Check for interrupt commands locally (instant response).
+    if (isInterruptCommand(text)) {
+        stopAudio();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "interrupt" }));
+        }
+        appendMessage("user", text, "You");
+        appendMessage("system", "Understood — stopped.", "NEXUS");
+        setAvatarState("idle");
+        setListeningActive(true);
+        return;
+    }
+
+    // Send as text query.
+    appendMessage("user", text, "You");
+    appendThinkingIndicator();
+    setAvatarState("thinking");
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "text", query: text }));
+    }
+}
+
+function isInterruptCommand(text) {
+    const cleaned = text.trim().toLowerCase();
+    const words = cleaned.split(/\s+/);
+    if (words.length > 4) return false;
+    return /\b(stop|nexus stop|shut up|be quiet|quiet|enough|cancel|hold on|wait|pause|never\s?mind|nevermind)\b/i.test(cleaned);
+}
+
+// ---------------------------------------------------------------------------
+// Interim transcript display
+// ---------------------------------------------------------------------------
+
+function showInterimTranscript(text) {
+    if (!interimDisplay) return;
+    interimDisplay.textContent = text;
+    interimDisplay.classList.add("visible");
+}
+
+function hideInterimTranscript() {
+    if (!interimDisplay) return;
+    interimDisplay.textContent = "";
+    interimDisplay.classList.remove("visible");
+}
+
+// ---------------------------------------------------------------------------
+// Microphone control
+// ---------------------------------------------------------------------------
+
+function startMic() {
+    if (micActive) return;
+    if (!recognition && !initSpeechRecognition()) return;
+
+    try {
+        recognition.start();
+        micActive = true;
+
+        if (micBtn) {
+            micBtn.classList.add("active");
+            micBtn.title = "Microphone active (click to mute)";
+        }
+        setListeningActive(true);
+        setStatus("active", "Listening — speak naturally");
+        console.log("Mic activated — browser SpeechRecognition");
+    } catch (err) {
+        console.error("Failed to start speech recognition:", err);
+        setStatus("error", "Could not start voice recognition");
+    }
+}
+
+function stopMic() {
+    micActive = false;
+    clearSilenceTimer();
+    hideInterimTranscript();
+
+    if (recognition && isRecognizing) {
+        try {
+            recognition.stop();
+        } catch (e) {
+            // Already stopped.
+        }
+    }
+
+    if (micBtn) {
+        micBtn.classList.remove("active");
+        micBtn.title = "Microphone muted (click to unmute)";
+    }
+    setListeningActive(false);
+}
+
+function toggleMic() {
+    if (micActive) {
+        stopMic();
+        micEnabledByUser = false;
+        setStatus("active", "Microphone muted");
+    } else {
+        micEnabledByUser = true;
+        startMic();
+    }
+}
 
 // ---------------------------------------------------------------------------
 // WebSocket connection
@@ -68,7 +303,6 @@ function connect() {
 
     ws.onclose = () => {
         setStatus("inactive", "Disconnected — reconnecting...");
-        stopMic();
         setTimeout(connect, 3000);
     };
 
@@ -96,15 +330,15 @@ function connect() {
 function handleMessage(msg) {
     switch (msg.type) {
         case "status":
-            setStatus("active", msg.message);
-            // Flag that STT is ready — mic will start on first user click.
-            if (msg.stt_available) {
-                sttAvailable = true;
+            if (!micActive) {
+                setStatus("active", msg.message);
             }
             break;
 
         case "listening":
-            setAvatarState("idle");
+            if (!micActive) {
+                setAvatarState("idle");
+            }
             setListeningActive(true);
             removeThinkingIndicator();
             break;
@@ -113,6 +347,7 @@ function handleMessage(msg) {
             break;
 
         case "transcription":
+            // Server-side transcription (fallback) — show it.
             appendMessage("user", msg.text, "You");
             removeThinkingIndicator();
             appendThinkingIndicator();
@@ -121,6 +356,7 @@ function handleMessage(msg) {
         case "response":
             removeThinkingIndicator();
             renderResponse(msg);
+            setAvatarState("idle");
             break;
 
         case "interrupted":
@@ -265,290 +501,6 @@ function sendTextQuery() {
 
     ws.send(JSON.stringify({ type: "text", query: query }));
     queryInput.value = "";
-}
-
-// ---------------------------------------------------------------------------
-// Microphone & VAD — continuous listening
-// ---------------------------------------------------------------------------
-
-async function startMic() {
-    if (micActive) return;
-
-    try {
-        micStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-            },
-        });
-
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-        // Critical: resume AudioContext (browsers suspend it until user gesture).
-        if (audioCtx.state === "suspended") {
-            await audioCtx.resume();
-        }
-
-        const source = audioCtx.createMediaStreamSource(micStream);
-
-        // Analyser for VAD (RMS energy detection).
-        analyserNode = audioCtx.createAnalyser();
-        analyserNode.fftSize = VAD_FRAME_SIZE;
-        source.connect(analyserNode);
-
-        // ScriptProcessor to capture PCM and run VAD each frame.
-        processorNode = audioCtx.createScriptProcessor(VAD_FRAME_SIZE, 1, 1);
-        processorNode.onaudioprocess = onAudioProcess;
-        source.connect(processorNode);
-        processorNode.connect(audioCtx.destination);
-
-        micActive = true;
-        vadState = "silence";
-        speechBuffer = [];
-        silenceFrames = 0;
-        speechFrames = 0;
-
-        console.log(`Mic active — sample rate: ${audioCtx.sampleRate}Hz, ` +
-            `frame: ${VAD_FRAME_SIZE} samples (${(VAD_FRAME_SIZE / audioCtx.sampleRate * 1000).toFixed(0)}ms), ` +
-            `silence timeout: ${(VAD_SPEECH_END_FRAMES * VAD_FRAME_SIZE / audioCtx.sampleRate).toFixed(1)}s`);
-
-        if (micBtn) {
-            micBtn.classList.add("active");
-            micBtn.title = "Microphone active (click to mute)";
-        }
-        setListeningActive(true);
-        setStatus("active", "Listening — speak naturally");
-    } catch (err) {
-        console.error("Microphone access denied:", err);
-        setStatus("error", "Microphone access denied");
-    }
-}
-
-function stopMic() {
-    micActive = false;
-    vadState = "silence";
-    speechBuffer = [];
-
-    if (processorNode) {
-        processorNode.disconnect();
-        processorNode = null;
-    }
-    if (analyserNode) {
-        analyserNode.disconnect();
-        analyserNode = null;
-    }
-    if (audioCtx) {
-        audioCtx.close().catch(() => {});
-        audioCtx = null;
-    }
-    if (micStream) {
-        micStream.getTracks().forEach(t => t.stop());
-        micStream = null;
-    }
-
-    if (micBtn) {
-        micBtn.classList.remove("active");
-        micBtn.title = "Microphone muted (click to unmute)";
-    }
-    setListeningActive(false);
-}
-
-function toggleMic() {
-    if (micActive) {
-        stopMic();
-        micEnabledByUser = false;
-        setStatus("active", "Microphone muted");
-    } else {
-        micEnabledByUser = true;
-        startMic();
-    }
-}
-
-/**
- * ScriptProcessor callback — runs VAD on each audio frame.
- *
- * VAD state machine:
- *   silence  →  (RMS > threshold for N frames)  →  speech
- *   speech   →  (RMS < threshold for M frames)   →  silence  (+ send segment)
- */
-function onAudioProcess(e) {
-    if (!micActive) return;
-
-    const input = e.inputBuffer.getChannelData(0);
-    const rms = computeRMS(input);
-
-    if (vadState === "silence") {
-        if (rms > VAD_SPEECH_THRESHOLD) {
-            speechFrames++;
-            if (speechFrames >= VAD_SPEECH_START_FRAMES) {
-                vadState = "speech";
-                silenceFrames = 0;
-                speechBuffer = [];
-                setListeningActive(false);
-                setAvatarState("listening");
-                setStatus("active", "Hearing you...");
-
-                // If Nexus is speaking, interrupt.
-                if (isSpeaking) {
-                    stopAudio();
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: "interrupt" }));
-                    }
-                }
-            }
-        } else {
-            speechFrames = 0;
-        }
-        // Buffer a few pre-speech frames so the start of the word isn't clipped.
-        if (speechFrames > 0) {
-            speechBuffer.push(new Float32Array(input));
-        }
-    } else if (vadState === "speech") {
-        speechBuffer.push(new Float32Array(input));
-
-        if (rms < VAD_SPEECH_THRESHOLD) {
-            silenceFrames++;
-            // Show countdown so user knows when it'll send.
-            const framesLeft = VAD_SPEECH_END_FRAMES - silenceFrames;
-            const secsLeft = (framesLeft * VAD_FRAME_SIZE / (audioCtx ? audioCtx.sampleRate : 48000)).toFixed(1);
-            if (silenceFrames % 10 === 0 && framesLeft > 0) {
-                setStatus("active", `Pause detected... processing in ${secsLeft}s`);
-            }
-            if (silenceFrames >= VAD_SPEECH_END_FRAMES) {
-                // Speech ended — send the segment.
-                vadState = "silence";
-                speechFrames = 0;
-                silenceFrames = 0;
-                setStatus("active", "Processing your question...");
-                sendSpeechSegment();
-            }
-        } else {
-            silenceFrames = 0;
-            setStatus("active", "Hearing you...");
-        }
-    }
-}
-
-function computeRMS(buffer) {
-    let sum = 0;
-    for (let i = 0; i < buffer.length; i++) {
-        sum += buffer[i] * buffer[i];
-    }
-    return Math.sqrt(sum / buffer.length);
-}
-
-/**
- * Package the speech buffer as a WAV and send to server.
- */
-function sendSpeechSegment() {
-    if (!speechBuffer.length || !ws || ws.readyState !== WebSocket.OPEN) {
-        speechBuffer = [];
-        setListeningActive(true);
-        return;
-    }
-
-    // Merge all float32 chunks.
-    let totalLength = 0;
-    for (const chunk of speechBuffer) totalLength += chunk.length;
-    const merged = new Float32Array(totalLength);
-    let offset = 0;
-    for (const chunk of speechBuffer) {
-        merged.set(chunk, offset);
-        offset += chunk.length;
-    }
-    speechBuffer = [];
-
-    // Resample to 16kHz for Whisper.
-    const nativeSR = audioCtx ? audioCtx.sampleRate : 48000;
-    const resampled = resample(merged, nativeSR, 16000);
-
-    // Convert float32 to int16 PCM.
-    const pcm = float32ToInt16(resampled);
-
-    // Wrap as WAV.
-    const wav = createWAV(pcm, 16000);
-
-    // Send: first a JSON header, then the binary WAV.
-    ws.send(JSON.stringify({ type: "speech_segment" }));
-    ws.send(wav);
-
-    appendThinkingIndicator();
-    setAvatarState("thinking");
-}
-
-/**
- * Simple linear interpolation resampler.
- */
-function resample(input, fromRate, toRate) {
-    if (fromRate === toRate) return input;
-    const ratio = fromRate / toRate;
-    const outLength = Math.round(input.length / ratio);
-    const output = new Float32Array(outLength);
-    for (let i = 0; i < outLength; i++) {
-        const srcIdx = i * ratio;
-        const low = Math.floor(srcIdx);
-        const high = Math.min(low + 1, input.length - 1);
-        const frac = srcIdx - low;
-        output[i] = input[low] * (1 - frac) + input[high] * frac;
-    }
-    return output;
-}
-
-function float32ToInt16(float32) {
-    const int16 = new Int16Array(float32.length);
-    for (let i = 0; i < float32.length; i++) {
-        const s = Math.max(-1, Math.min(1, float32[i]));
-        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-    return int16;
-}
-
-/**
- * Create a WAV file from int16 PCM data.
- */
-function createWAV(pcm, sampleRate) {
-    const numChannels = 1;
-    const bitsPerSample = 16;
-    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
-    const blockAlign = numChannels * (bitsPerSample / 8);
-    const dataSize = pcm.length * (bitsPerSample / 8);
-    const headerSize = 44;
-
-    const buffer = new ArrayBuffer(headerSize + dataSize);
-    const view = new DataView(buffer);
-
-    // RIFF header
-    writeString(view, 0, "RIFF");
-    view.setUint32(4, 36 + dataSize, true);
-    writeString(view, 8, "WAVE");
-
-    // fmt sub-chunk
-    writeString(view, 12, "fmt ");
-    view.setUint32(16, 16, true);          // sub-chunk size
-    view.setUint16(20, 1, true);           // PCM format
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, byteRate, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitsPerSample, true);
-
-    // data sub-chunk
-    writeString(view, 36, "data");
-    view.setUint32(40, dataSize, true);
-
-    // PCM data
-    const pcmView = new Int16Array(buffer, headerSize);
-    pcmView.set(pcm);
-
-    return buffer;
-}
-
-function writeString(view, offset, str) {
-    for (let i = 0; i < str.length; i++) {
-        view.setUint8(offset + i, str.charCodeAt(i));
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -710,22 +662,13 @@ function animateAvatar() {
         }
     }
 
-    // Listening: subtle mic input visualization.
-    if (avatarState === "listening" && analyserNode) {
-        const data = new Uint8Array(analyserNode.fftSize);
-        analyserNode.getByteTimeDomainData(data);
+    // Listening: gentle pulse effect.
+    if (avatarState === "listening") {
+        const pulseRadius = radius + 10 + Math.sin(t * 4) * 5;
         ctx.beginPath();
-        ctx.strokeStyle = "rgba(0, 229, 255, 0.4)";
-        ctx.lineWidth = 1.5;
-        const sliceWidth = (radius * 2) / data.length;
-        let xPos = cx - radius;
-        for (let i = 0; i < data.length; i++) {
-            const v = data[i] / 128.0;
-            const y = cy + radius * 0.8 + (v - 1) * 30;
-            if (i === 0) ctx.moveTo(xPos, y);
-            else ctx.lineTo(xPos, y);
-            xPos += sliceWidth;
-        }
+        ctx.arc(cx, cy, pulseRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(0, 229, 255, 0.3)";
+        ctx.lineWidth = 2;
         ctx.stroke();
     }
 
@@ -777,6 +720,16 @@ document.addEventListener("DOMContentLoaded", () => {
     avatarLabel = document.getElementById("avatar-state-label");
     avatarGlow = document.getElementById("avatar-glow");
     listeningIndicator = document.getElementById("listening-indicator");
+    interimDisplay = document.getElementById("interim-transcript");
+
+    // Check browser support.
+    if (!SpeechRecognition) {
+        appendMessage("error",
+            "Your browser does not support voice recognition. " +
+            "Please use Chrome, Edge, or Safari. You can still type queries below.",
+            "Error"
+        );
+    }
 
     connect();
     initAvatar();
