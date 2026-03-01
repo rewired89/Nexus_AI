@@ -1114,6 +1114,44 @@ def interface(
     from acheron.interface.ws_server import create_interface_app
 
     settings = get_settings()
+
+    # ── Auto-setup: create .env if API key is missing ──────────────
+    if not settings.anthropic_api_key:
+        _env_path = Path(__file__).resolve().parents[2] / ".env"
+        console.print(Panel(
+            "[bold yellow]No API key found.[/bold yellow]\n\n"
+            "Nexus needs an Anthropic API key to answer questions.\n"
+            "Get one at: https://console.anthropic.com/settings/keys\n\n"
+            "Paste it below and it will be saved to .env automatically.",
+            title="First-Time Setup",
+            border_style="yellow",
+        ))
+        ant_key = click.prompt("  ANTHROPIC_API_KEY", default="", show_default=False)
+        el_key = click.prompt(
+            "  ELEVENLABS_API_KEY (optional, press Enter to skip)",
+            default="", show_default=False,
+        )
+        if ant_key:
+            lines = [
+                "# Nexus AI configuration",
+                "# This file is NOT tracked by git — safe for API keys.",
+                "",
+            ]
+            lines.append(f"ANTHROPIC_API_KEY={ant_key}")
+            if el_key:
+                lines.append(f"ELEVENLABS_API_KEY={el_key}")
+            lines.append("")
+            _env_path.write_text("\n".join(lines))
+            console.print(f"\n[green]Saved to {_env_path}[/green]\n")
+            # Reload settings so the rest of startup picks up the new keys.
+            if hasattr(get_settings, "_instance"):
+                del get_settings._instance  # type: ignore[attr-defined]
+            settings = get_settings()
+        else:
+            console.print(
+                "\n[dim]Skipped — Nexus will start but won't be able to "
+                "answer questions until an API key is set.[/dim]\n"
+            )
     app = create_interface_app(
         stt_model=whisper_model or settings.whisper_model,
         stt_device=whisper_device or settings.whisper_device,
@@ -1130,7 +1168,7 @@ def interface(
         f"Kiosk:  http://{bind_host}:{bind_port}/\n"
         f"WebSocket:  ws://{bind_host}:{bind_port}/ws\n"
         f"Whisper: {whisper_model or settings.whisper_model}\n"
-        f"TTS: {'Piper' if (piper_model or settings.piper_model_path) else 'ElevenLabs' if settings.elevenlabs_api_key else 'disabled'}",
+        f"TTS: {'Piper' if (piper_model or settings.piper_model_path) else 'ElevenLabs' if settings.elevenlabs_api_key else 'Edge TTS (free)'}",
         title="Starting Interface",
         border_style="cyan",
     ))

@@ -327,8 +327,8 @@ def create_interface_app(
             _warnings = []
             if not _cfg.compute_available:
                 _warnings.append(
-                    "No LLM API key configured. Set ANTHROPIC_API_KEY in "
-                    "your .env file to enable AI responses."
+                    "No LLM API key configured. Restart 'nexus interface' "
+                    "and it will prompt you, or run: python setup_keys.py"
                 )
             if not _cfg.vectorstore_dir.exists() or not any(
                 _cfg.vectorstore_dir.iterdir()
