@@ -175,11 +175,19 @@ function clearSilenceTimer() {
 // Speech finalized — send to server
 // ---------------------------------------------------------------------------
 
+function capitalizeFirst(str) {
+    if (!str) return str;
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 function onSpeechFinalized(text) {
     clearSilenceTimer();
     hideInterimTranscript();
 
     if (!text) return;
+
+    // Capitalize first letter like a normal sentence.
+    text = capitalizeFirst(text);
 
     // Check for interrupt commands locally (instant response).
     if (isInterruptCommand(text)) {
@@ -194,13 +202,15 @@ function onSpeechFinalized(text) {
         return;
     }
 
-    // Send as text query.
-    appendMessage("user", text, "You");
-    appendThinkingIndicator();
-    setAvatarState("thinking");
-
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "text", query: text }));
+    // Place text in input box for editing instead of sending immediately.
+    // User can fix misheard words, then press Enter or Send.
+    if (queryInput) {
+        queryInput.value = text;
+        queryInput.focus();
+        // Select all so user can easily retype if totally wrong.
+        queryInput.select();
+        setStatus("active", "Review your question — press Enter to send, or edit first");
+        setAvatarState("idle");
     }
 }
 
@@ -492,9 +502,10 @@ function removeThinkingIndicator() {
 // ---------------------------------------------------------------------------
 
 function sendTextQuery() {
-    const query = queryInput.value.trim();
-    if (!query || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const raw = queryInput.value.trim();
+    if (!raw || !ws || ws.readyState !== WebSocket.OPEN) return;
 
+    const query = capitalizeFirst(raw);
     appendMessage("user", query, "You");
     appendThinkingIndicator();
     setAvatarState("thinking");

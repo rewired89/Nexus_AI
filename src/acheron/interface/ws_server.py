@@ -91,6 +91,55 @@ def is_interrupt_command(text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Domain scope check — fast reject for out-of-scope questions
+# ---------------------------------------------------------------------------
+
+# Keywords that indicate a biotechnology / life-science question.
+_BIOTECH_KEYWORDS = re.compile(
+    r"\b("
+    r"cell|cells|gene|genes|genetic|genome|genomic|protein|proteins|enzyme|"
+    r"DNA|RNA|mRNA|tRNA|rRNA|plasmid|vector|CRISPR|cas9|"
+    r"biology|biological|biotech|biotechnology|bioinformatics|"
+    r"organism|species|bacteria|bacterial|virus|viral|fungal|fungi|"
+    r"tissue|organ|membrane|cytoplasm|nucleus|mitochondria|ribosome|"
+    r"planarian|flatworm|regenerat|stem\s*cell|bioelectric|"
+    r"receptor|ligand|signal|pathway|cascade|apoptosis|necrosis|"
+    r"PCR|electrophoresis|chromatography|spectroscopy|assay|"
+    r"physics|quantum|thermodynamic|kinetic|entropy|"
+    r"chemistry|chemical|molecule|molecular|compound|reaction|"
+    r"math|equation|calculus|algebra|statistics|probability|"
+    r"ferment|cloning|expression|transcription|translation|"
+    r"mutation|polymorphism|allele|phenotype|genotype|"
+    r"microscop|centrifug|pipett|incubat|buffer|"
+    r"anatomy|physiology|neuron|synapse|axon|dendrite|"
+    r"immunology|antibody|antigen|immune|lymphocyte|"
+    r"pharmacology|drug|therapeutic|dosage|toxicity|"
+    r"ecology|ecosystem|biodiversity|evolution|"
+    r"photosynthesis|respiration|metabol|ATP|"
+    r"amino\s*acid|nucleotide|lipid|carbohydrate|"
+    r"biofilm|culture|medium|agar|petri|"
+    r"hypothesis|experiment|lab|laboratory|"
+    r"communicate|communication|interact|mechanism|"
+    r"division|mitosis|meiosis|differentiat"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_SCOPE_MESSAGE = (
+    "I'm Nexus, a Biotechnology research assistant. "
+    "I can help with Biology, Chemistry, Physics, and Math "
+    "questions related to the Biotechnology field.\n\n"
+    "Your question doesn't appear to be in my area of expertise. "
+    "Could you rephrase it as a science or biotech question?"
+)
+
+
+def _is_in_scope(query: str) -> bool:
+    """Return True if the query is relevant to biotechnology / life sciences."""
+    return bool(_BIOTECH_KEYWORDS.search(query))
+
+
+# ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
 
@@ -426,6 +475,22 @@ async def _process_query(
     """Run a query through the pipeline and send results back."""
     loop = asyncio.get_event_loop()
 
+    # Fast scope check — reject clearly off-topic questions immediately
+    # instead of spending 5+ minutes on live PubMed fetch.
+    if not _is_in_scope(query):
+        avatar.transition(AvatarState.SPEAKING)
+        await send_avatar_state()
+        await send_json({
+            "type": "response",
+            "answer": _SCOPE_MESSAGE,
+            "sources": [],
+            "mode": "scope",
+            "session_turns": memory.turn_count,
+        })
+        avatar.transition(AvatarState.IDLE)
+        await send_avatar_state()
+        return
+
     try:
         pipeline = get_pipeline()
 
@@ -437,34 +502,67 @@ async def _process_query(
         if interrupted.is_set():
             return
 
-        # Run the pipeline in a threadpool (it's synchronous).
-        if query_mode == "discover":
-            result = await loop.run_in_executor(
-                None, lambda: pipeline.discover(enriched)
-            )
-            answer = _format_discovery(result)
-            mode_used = getattr(result, "detected_mode", "discovery")
-            sources = [
-                _source_to_dict(s) for s in getattr(result, "sources", [])
-            ]
-        elif query_mode == "query":
-            result = await loop.run_in_executor(
-                None, lambda: pipeline.query(enriched)
-            )
-            answer = result.answer
-            mode_used = "evidence"
-            sources = [_source_to_dict(s) for s in result.sources]
-        else:
-            # Default: analyze (hypothesis engine).
-            result = await loop.run_in_executor(
-                None,
-                lambda: pipeline.analyze(enriched, mode=explicit_mode),
-            )
-            answer = result.raw_output
-            mode_used = result.mode.value if hasattr(result.mode, "value") else str(result.mode)
-            sources = [
-                _source_to_dict(s) for s in getattr(result, "sources", [])
-            ]
+        # Run the pipeline in a threadpool with a timeout.
+        # The pipeline can take very long when live retrieval triggers
+        # (PubMed fetch). Cap at 90 seconds to avoid indefinite waits.
+        _QUERY_TIMEOUT = 90  # seconds
+
+        try:
+            if query_mode == "discover":
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None, lambda: pipeline.discover(enriched)
+                    ),
+                    timeout=_QUERY_TIMEOUT,
+                )
+                answer = _format_discovery(result)
+                mode_used = getattr(result, "detected_mode", "discovery")
+                sources = [
+                    _source_to_dict(s) for s in getattr(result, "sources", [])
+                ]
+            elif query_mode == "query":
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None, lambda: pipeline.query(enriched)
+                    ),
+                    timeout=_QUERY_TIMEOUT,
+                )
+                answer = result.answer
+                mode_used = "evidence"
+                sources = [_source_to_dict(s) for s in result.sources]
+            else:
+                # Default: analyze (hypothesis engine).
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: pipeline.analyze(enriched, mode=explicit_mode),
+                    ),
+                    timeout=_QUERY_TIMEOUT,
+                )
+                answer = result.raw_output
+                mode_used = result.mode.value if hasattr(result.mode, "value") else str(result.mode)
+                sources = [
+                    _source_to_dict(s) for s in getattr(result, "sources", [])
+                ]
+        except asyncio.TimeoutError:
+            logger.warning("Query timed out after %ds: %s", _QUERY_TIMEOUT, query[:80])
+            avatar.transition(AvatarState.ERROR)
+            await send_avatar_state()
+            await send_json({
+                "type": "response",
+                "answer": (
+                    "The query took too long (over 90 seconds). "
+                    "This usually happens when I need to search external databases "
+                    "like PubMed for papers. Try switching to **Query** mode "
+                    "(faster, uses only local knowledge) or rephrase your question."
+                ),
+                "sources": [],
+                "mode": "timeout",
+                "session_turns": memory.turn_count,
+            })
+            avatar.transition(AvatarState.IDLE)
+            await send_avatar_state()
+            return
 
         if interrupted.is_set():
             return
