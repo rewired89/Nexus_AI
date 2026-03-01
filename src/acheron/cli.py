@@ -1099,10 +1099,10 @@ def interface(
     whisper_device: str | None,
     piper_model: str | None,
 ) -> None:
-    """Start the Nexus voice/avatar interface (Arthur layer).
+    """Start the Nexus voice/avatar interface.
 
     Launches a WebSocket server with the kiosk frontend for voice-driven
-    interaction with Acheron's RAG pipeline.  Supports Whisper STT and
+    interaction with the Nexus RAG pipeline.  Supports Whisper STT and
     Piper/ElevenLabs TTS.
 
     Open the displayed URL in a browser (or Chromium kiosk mode) to
