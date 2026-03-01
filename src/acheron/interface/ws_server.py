@@ -147,18 +147,30 @@ _KIOSK_DIR = Path(__file__).parent / "kiosk"
 
 
 def create_interface_app(
-    stt_model: str = "base",
-    stt_device: str = "auto",
+    stt_model: str = "",
+    stt_device: str = "",
     piper_model: str = "",
     elevenlabs_key: str = "",
     elevenlabs_voice: str = "",
-    session_path: str = "data/nexus_session.json",
+    session_path: str = "",
 ) -> FastAPI:
     """Build the Nexus interface FastAPI application.
 
     This app serves the kiosk frontend and exposes a WebSocket at
     ``/ws`` for the full voice <-> pipeline bridge.
+
+    All parameters auto-read from .env / config if not explicitly provided.
     """
+    # Auto-read from .env / config for any unset parameter.
+    from acheron.config import get_settings
+    settings = get_settings()
+    stt_model = stt_model or settings.whisper_model
+    stt_device = stt_device or settings.whisper_device
+    piper_model = piper_model or settings.piper_model_path
+    elevenlabs_key = elevenlabs_key or settings.elevenlabs_api_key
+    elevenlabs_voice = elevenlabs_voice or settings.elevenlabs_voice_id
+    session_path = session_path or settings.nexus_session_path
+
     app = FastAPI(title="Nexus Interface", version="0.2.0")
 
     # ---- shared state (created once, shared across connections) ----
@@ -290,13 +302,25 @@ def create_interface_app(
                 {"id": p.id, "label": p.label, "description": p.description}
                 for p in VOICE_PROFILES.values()
             ]
+            # Pass ElevenLabs config to frontend for client-side TTS.
+            voice_config = {}
+            if elevenlabs_key:
+                voice_config = {
+                    "elevenlabs_key": elevenlabs_key,
+                    "voice_profiles": {
+                        pid: p.elevenlabs_voice_id
+                        for pid, p in VOICE_PROFILES.items()
+                    },
+                }
+
             await send_json({
                 "type": "status",
                 "message": "Nexus online. Speak naturally — I'm listening.",
                 "stt_available": stt.available,
-                "tts_available": len(tts_engines) > 0,
+                "tts_available": len(tts_engines) > 0 or bool(elevenlabs_key),
                 "voices": profiles_info,
                 "active_voice": voice_profile,
+                "voice_config": voice_config,
             })
 
             # Warn user about missing configuration at connect time.
@@ -315,7 +339,7 @@ def create_interface_app(
                     "Knowledge base is empty. Run 'acheron collect' or "
                     "'acheron add <pdf>' to ingest papers."
                 )
-            if not tts_engines:
+            if not tts_engines and not elevenlabs_key:
                 _warnings.append(
                     "No voice engine configured. Set ELEVENLABS_API_KEY or "
                     "NEXUS_PIPER_MODEL in .env to enable voice responses."

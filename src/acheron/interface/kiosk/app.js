@@ -38,9 +38,13 @@ const SILENCE_TIMEOUT_MS = 2000; // 2s pause → send query
 // Playback state
 let currentAudio = null;
 let isSpeaking = false; // Nexus is speaking
-let lastResponseText = ""; // for browser TTS fallback
+let lastResponseText = ""; // for client-side TTS
 let awaitingServerAudio = false; // expecting binary audio from server
 let serverAudioTimer = null;
+
+// ElevenLabs client-side TTS config (received from server on connect)
+let elevenLabsKey = "";
+let elevenLabsVoices = {}; // { male: "voice_id", female: "voice_id" }
 
 // DOM references (set in DOMContentLoaded)
 let responsePanel, queryInput, micBtn, sendBtn, modeSelect, voiceSelect;
@@ -346,6 +350,12 @@ function handleMessage(msg) {
             if (!micActive) {
                 setStatus("active", msg.message);
             }
+            // Capture ElevenLabs config from initial status message.
+            if (msg.voice_config && msg.voice_config.elevenlabs_key) {
+                elevenLabsKey = msg.voice_config.elevenlabs_key;
+                elevenLabsVoices = msg.voice_config.voice_profiles || {};
+                console.log("ElevenLabs TTS configured:", Object.keys(elevenLabsVoices));
+            }
             break;
 
         case "listening":
@@ -578,35 +588,110 @@ function stopAudio() {
 }
 
 // ---------------------------------------------------------------------------
-// Browser TTS fallback (speechSynthesis — works on all browsers)
+// Client-side TTS — ElevenLabs (primary) + browser speechSynthesis (fallback)
 // ---------------------------------------------------------------------------
 
-function speakWithBrowser(text) {
-    if (!window.speechSynthesis || !text) {
-        setAvatarState("idle");
-        return;
-    }
-
-    // Strip markdown for cleaner speech.
-    const clean = text
+function cleanTextForSpeech(text) {
+    return text
         .replace(/\*\*(.+?)\*\*/g, "$1")
         .replace(/```[\s\S]*?```/g, "")
         .replace(/`([^`]+)`/g, "$1")
         .replace(/^#{1,4}\s+/gm, "")
         .replace(/^- /gm, "")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
         .trim();
+}
 
-    // Truncate long responses for speech.
-    const maxChars = 500;
+function speakWithBrowser(text) {
+    if (!text) {
+        setAvatarState("idle");
+        return;
+    }
+
+    const clean = cleanTextForSpeech(text);
+    const maxChars = 800;
     const spoken = clean.length > maxChars
         ? clean.slice(0, maxChars) + "..."
         : clean;
 
-    const utterance = new SpeechSynthesisUtterance(spoken);
+    // Try ElevenLabs first (high-quality, natural voice).
+    if (elevenLabsKey) {
+        speakWithElevenLabs(spoken);
+        return;
+    }
+
+    // Fallback: browser speechSynthesis (robotic but works everywhere).
+    speakWithBrowserSynthesis(spoken);
+}
+
+async function speakWithElevenLabs(text) {
+    const profile = voiceSelect ? voiceSelect.value : "female";
+    const voiceId = elevenLabsVoices[profile] || elevenLabsVoices["female"] || "21m00Tcm4TlvDq8ikWAM";
+
+    isSpeaking = true;
+    setAvatarState("speaking");
+
+    try {
+        const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+            method: "POST",
+            headers: {
+                "xi-api-key": elevenLabsKey,
+                "Content-Type": "application/json",
+                "Accept": "audio/mpeg",
+            },
+            body: JSON.stringify({
+                text: text,
+                model_id: "eleven_multilingual_v2",
+                voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.75,
+                },
+            }),
+        });
+
+        if (!resp.ok) {
+            console.warn("ElevenLabs TTS failed:", resp.status, await resp.text());
+            // Fall back to browser synthesis.
+            speakWithBrowserSynthesis(text);
+            return;
+        }
+
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        stopAudio();
+        currentAudio = new Audio(url);
+
+        currentAudio.onended = () => {
+            URL.revokeObjectURL(url);
+            isSpeaking = false;
+            currentAudio = null;
+            setAvatarState("idle");
+            setListeningActive(true);
+        };
+        currentAudio.onerror = () => {
+            URL.revokeObjectURL(url);
+            isSpeaking = false;
+            currentAudio = null;
+            setAvatarState("idle");
+        };
+
+        await currentAudio.play();
+    } catch (err) {
+        console.warn("ElevenLabs TTS error:", err);
+        speakWithBrowserSynthesis(text);
+    }
+}
+
+function speakWithBrowserSynthesis(text) {
+    if (!window.speechSynthesis || !text) {
+        setAvatarState("idle");
+        return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
 
-    // Try to pick a good voice.
     const voices = speechSynthesis.getVoices();
     const voicePref = voiceSelect ? voiceSelect.value : "female";
     const preferred = voices.find(v =>
@@ -616,7 +701,6 @@ function speakWithBrowser(text) {
                 : /male|daniel|david|james|mark/i.test(v.name)
         )
     ) || voices.find(v => v.lang.startsWith("en")) || voices[0];
-
     if (preferred) utterance.voice = preferred;
 
     utterance.onstart = () => {
@@ -812,17 +896,20 @@ document.addEventListener("DOMContentLoaded", () => {
     listeningIndicator = document.getElementById("listening-indicator");
     interimDisplay = document.getElementById("interim-transcript");
 
-    // Check browser support — graceful fallback to text-only.
+    // Check browser support for voice INPUT (mic).
     if (!SpeechRecognition) {
         appendMessage("system",
-            "Voice input is not available in this browser. " +
-            "Type your questions below and press Enter or click Send. " +
-            "For voice, use Chrome or Edge.",
+            "Voice input (microphone) requires Chrome or Edge. " +
+            "You can type your questions below. " +
+            "Voice output will still work in this browser.",
             "NEXUS"
         );
-        // Hide the mic button since it won't work.
-        if (micBtn) micBtn.style.display = "none";
-        // Focus the text input so user can start typing immediately.
+        // Disable mic button but keep it visible — show tooltip.
+        if (micBtn) {
+            micBtn.disabled = true;
+            micBtn.title = "Voice input requires Chrome or Edge";
+            micBtn.style.opacity = "0.4";
+        }
         if (queryInput) queryInput.focus();
     }
 
