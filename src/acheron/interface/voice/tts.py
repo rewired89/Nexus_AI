@@ -257,14 +257,14 @@ class ElevenLabsTTS:
     voice_id : str
         Voice ID to use.  Defaults to "Antoni" (a soft male voice).
     model_id : str
-        ElevenLabs model.  ``eleven_monolingual_v1`` is fastest.
+        ElevenLabs model.  ``eleven_multilingual_v2`` has best quality.
     """
 
     def __init__(
         self,
         api_key: str = "",
         voice_id: str = "ErXwobaYiN019PkySvjV",  # Antoni
-        model_id: str = "eleven_monolingual_v1",
+        model_id: str = "eleven_multilingual_v2",
     ) -> None:
         self.api_key = api_key
         self.voice_id = voice_id

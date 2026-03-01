@@ -187,8 +187,16 @@ def create_interface_app(
         if elevenlabs_key:
             voice_id = elevenlabs_voice or profile.elevenlabs_voice_id
             tts_engines[profile_id] = ElevenLabsTTS(
-                api_key=elevenlabs_key, voice_id=profile.elevenlabs_voice_id
+                api_key=elevenlabs_key, voice_id=voice_id
             )
+
+    if tts_engines:
+        logger.info("TTS enabled: %s", ", ".join(tts_engines.keys()))
+    else:
+        logger.info(
+            "TTS not configured — browser speechSynthesis will be used as fallback. "
+            "Set ELEVENLABS_API_KEY in .env for ElevenLabs voice."
+        )
 
     # Lazy-loaded pipeline to avoid import cost at startup.
     _pipeline_cache: dict[str, object] = {}

@@ -38,6 +38,9 @@ const SILENCE_TIMEOUT_MS = 2000; // 2s pause → send query
 // Playback state
 let currentAudio = null;
 let isSpeaking = false; // Nexus is speaking
+let lastResponseText = ""; // for browser TTS fallback
+let awaitingServerAudio = false; // expecting binary audio from server
+let serverAudioTimer = null;
 
 // DOM references (set in DOMContentLoaded)
 let responsePanel, queryInput, micBtn, sendBtn, modeSelect, voiceSelect;
@@ -366,7 +369,17 @@ function handleMessage(msg) {
         case "response":
             removeThinkingIndicator();
             renderResponse(msg);
-            setAvatarState("idle");
+            // Wait briefly for server audio (ElevenLabs TTS).
+            // If no audio arrives, fall back to browser speechSynthesis.
+            lastResponseText = msg.answer || "";
+            awaitingServerAudio = true;
+            clearTimeout(serverAudioTimer);
+            serverAudioTimer = setTimeout(() => {
+                if (awaitingServerAudio && lastResponseText) {
+                    awaitingServerAudio = false;
+                    speakWithBrowser(lastResponseText);
+                }
+            }, 2000);
             break;
 
         case "interrupted":
@@ -519,6 +532,9 @@ function sendTextQuery() {
 // ---------------------------------------------------------------------------
 
 function playAudio(blob) {
+    // Server audio arrived — cancel browser TTS fallback.
+    awaitingServerAudio = false;
+    clearTimeout(serverAudioTimer);
     stopAudio(); // Stop any previous playback.
 
     const url = URL.createObjectURL(blob);
@@ -554,7 +570,70 @@ function stopAudio() {
         currentAudio.currentTime = 0;
         currentAudio = null;
     }
+    // Also stop browser speech synthesis if active.
+    if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+    }
     isSpeaking = false;
+}
+
+// ---------------------------------------------------------------------------
+// Browser TTS fallback (speechSynthesis — works on all browsers)
+// ---------------------------------------------------------------------------
+
+function speakWithBrowser(text) {
+    if (!window.speechSynthesis || !text) {
+        setAvatarState("idle");
+        return;
+    }
+
+    // Strip markdown for cleaner speech.
+    const clean = text
+        .replace(/\*\*(.+?)\*\*/g, "$1")
+        .replace(/```[\s\S]*?```/g, "")
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/^#{1,4}\s+/gm, "")
+        .replace(/^- /gm, "")
+        .trim();
+
+    // Truncate long responses for speech.
+    const maxChars = 500;
+    const spoken = clean.length > maxChars
+        ? clean.slice(0, maxChars) + "..."
+        : clean;
+
+    const utterance = new SpeechSynthesisUtterance(spoken);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    // Try to pick a good voice.
+    const voices = speechSynthesis.getVoices();
+    const voicePref = voiceSelect ? voiceSelect.value : "female";
+    const preferred = voices.find(v =>
+        v.lang.startsWith("en") && (
+            voicePref === "female"
+                ? /female|samantha|karen|victoria|zira/i.test(v.name)
+                : /male|daniel|david|james|mark/i.test(v.name)
+        )
+    ) || voices.find(v => v.lang.startsWith("en")) || voices[0];
+
+    if (preferred) utterance.voice = preferred;
+
+    utterance.onstart = () => {
+        isSpeaking = true;
+        setAvatarState("speaking");
+    };
+    utterance.onend = () => {
+        isSpeaking = false;
+        setAvatarState("idle");
+        setListeningActive(true);
+    };
+    utterance.onerror = () => {
+        isSpeaking = false;
+        setAvatarState("idle");
+    };
+
+    speechSynthesis.speak(utterance);
 }
 
 // ---------------------------------------------------------------------------
