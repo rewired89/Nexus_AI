@@ -722,13 +722,18 @@ document.addEventListener("DOMContentLoaded", () => {
     listeningIndicator = document.getElementById("listening-indicator");
     interimDisplay = document.getElementById("interim-transcript");
 
-    // Check browser support.
+    // Check browser support — graceful fallback to text-only.
     if (!SpeechRecognition) {
-        appendMessage("error",
-            "Your browser does not support voice recognition. " +
-            "Please use Chrome, Edge, or Safari. You can still type queries below.",
-            "Error"
+        appendMessage("system",
+            "Voice input is not available in this browser. " +
+            "Type your questions below and press Enter or click Send. " +
+            "For voice, use Chrome or Edge.",
+            "NEXUS"
         );
+        // Hide the mic button since it won't work.
+        if (micBtn) micBtn.style.display = "none";
+        // Focus the text input so user can start typing immediately.
+        if (queryInput) queryInput.focus();
     }
 
     connect();
