@@ -74,7 +74,7 @@ interface = [
 ]
 
 [project.scripts]
-acheron = "acheron.cli:main"
+nexus = "acheron.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,4 +1,4 @@
-"""Acheron Nexus CLI — System-2 bioelectric research engine.
+"""Nexus CLI — System-2 bioelectric research engine.
 
 Three-layer architecture:
   Layer 1 (Knowledge)  — immutable source corpus
@@ -50,7 +50,7 @@ DEFAULT_TOPICS = {
 @click.group()
 @click.option("--verbose", "-v", is_flag=True, help="Enable debug logging")
 def main(verbose: bool) -> None:
-    """Nexus — Bioelectric research intelligence (Acheron project)."""
+    """Nexus — Bioelectric research intelligence."""
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
@@ -85,8 +85,8 @@ def collect(
     """Collect papers into the Library from academic sources.
 
     Examples:
-        acheron collect --source pubmed -t "bioelectricity planarian" -n 25 --mindate 2015
-        acheron collect --source pubmed -t "ion channel voltage" --mindate 2020 --maxdate 2024
+        nexus collect --source pubmed -t "bioelectricity planarian" -n 25 --mindate 2015
+        nexus collect --source pubmed -t "ion channel voltage" --mindate 2020 --maxdate 2024
     """
     from acheron.collectors.arxiv import ArxivCollector
     from acheron.collectors.biorxiv import BiorxivCollector
@@ -172,12 +172,12 @@ def index(reindex: bool) -> None:
 
     metadata_dir = settings.metadata_dir
     if not metadata_dir.exists():
-        console.print("[red]Library empty. Run 'acheron collect' first.[/]")
+        console.print("[red]Library empty. Run 'nexus collect' first.[/]")
         return
 
     metadata_files = list(metadata_dir.glob("*.json"))
     if not metadata_files:
-        console.print("[red]No JSON records in Library. Run 'acheron collect' first.[/]")
+        console.print("[red]No JSON records in Library. Run 'nexus collect' first.[/]")
         return
 
     console.print(f"Library contains {len(metadata_files)} paper records")
@@ -251,7 +251,7 @@ def index(reindex: bool) -> None:
             "  - Papers have no abstract or full text\n"
             "  - No PDFs downloaded and no PMC NXML available\n"
             "  - JSON metadata files are empty or malformed\n"
-            "  Run 'acheron collect --source pubmed -t \"your topic\" -n 10' first"
+            "  Run 'nexus collect --source pubmed -t \"your topic\" -n 10' first"
         )
 
 
@@ -342,7 +342,7 @@ def _interactive_loop(pipeline, source_filter, n_results, retrieve_only):
             "  [dim]Prefix with[/] /analyze [dim]for the hypothesis engine[/]\n"
             "  [dim]Prefix with[/] /live [dim]for live retrieval from PubMed/bioRxiv/arXiv[/]\n"
             "  [dim]Type[/] quit [dim]to exit[/]",
-            title="Acheron Nexus",
+            title="Nexus",
             border_style="cyan",
         )
     )
@@ -669,9 +669,9 @@ def analyze(
       auto       — detect mode from query text (default)
 
     Examples:
-        acheron analyze "What role does Vmem play in planarian regeneration?"
-        acheron analyze --mode hypothesis "Why do planaria regenerate heads?"
-        acheron analyze --live "bioelectric control of morphogenesis"
+        nexus analyze "What role does Vmem play in planarian regeneration?"
+        nexus analyze --mode hypothesis "Why do planaria regenerate heads?"
+        nexus analyze --live "bioelectric control of morphogenesis"
     """
     from acheron.rag.pipeline import RAGPipeline
 
