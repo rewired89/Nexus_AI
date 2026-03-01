@@ -290,6 +290,36 @@ def create_interface_app(
                 "voices": profiles_info,
                 "active_voice": voice_profile,
             })
+
+            # Warn user about missing configuration at connect time.
+            from acheron.config import get_settings as _get_settings
+            _cfg = _get_settings()
+            _warnings = []
+            if not _cfg.compute_available:
+                _warnings.append(
+                    "No LLM API key configured. Set ANTHROPIC_API_KEY in "
+                    "your .env file to enable AI responses."
+                )
+            if not _cfg.vectorstore_dir.exists() or not any(
+                _cfg.vectorstore_dir.iterdir()
+            ) if _cfg.vectorstore_dir.exists() else True:
+                _warnings.append(
+                    "Knowledge base is empty. Run 'acheron collect' or "
+                    "'acheron add <pdf>' to ingest papers."
+                )
+            if not tts_engines:
+                _warnings.append(
+                    "No voice engine configured. Set ELEVENLABS_API_KEY or "
+                    "NEXUS_PIPER_MODEL in .env to enable voice responses."
+                )
+            if _warnings:
+                await send_json({
+                    "type": "response",
+                    "answer": "**Setup needed:**\n\n- " + "\n- ".join(_warnings),
+                    "sources": [],
+                    "mode": "setup",
+                    "session_turns": 0,
+                })
             await signal_listening()
 
             while True:
