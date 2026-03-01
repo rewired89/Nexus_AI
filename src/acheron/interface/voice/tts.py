@@ -1,17 +1,16 @@
 """Text-to-speech for the Nexus interface.
 
-Two engines:
+Three engines (tried in order):
 
-1. **Piper TTS** — Fast, local, no API key.  Requires the ``piper-tts``
-   package and a downloaded voice model (``.onnx`` + ``.json``).
-2. **ElevenLabs** — Cloud API, higher quality, requires API key.
-
-Both produce 16-bit PCM WAV audio suitable for browser playback and
-avatar lip-sync amplitude extraction.
+1. **Piper TTS** — Fast, local, no API key.  Requires ``piper-tts``
+   package and a downloaded voice model.
+2. **ElevenLabs** — Cloud API, highest quality, requires API key.
+3. **Edge TTS** — Free Microsoft Neural voices via ``edge-tts`` package.
+   No API key needed.  Natural-sounding voices.  **Default engine.**
 
 Voice profiles:
 
-Two built-in profiles ("male" and "female") are available for both
+Two built-in profiles ("male" and "female") are available for all
 engines.  The user can switch mid-session via the kiosk UI.
 """
 
@@ -41,6 +40,7 @@ class VoiceProfile:
     label: str                  # display name
     elevenlabs_voice_id: str    # ElevenLabs voice ID
     piper_model_name: str       # Piper model stem (e.g. "en_US-lessac-medium")
+    edge_tts_voice: str = ""    # Edge TTS voice name (e.g. "en-US-AriaNeural")
     description: str = ""
 
 
@@ -51,6 +51,7 @@ VOICE_PROFILES: dict[str, VoiceProfile] = {
         label="Nexus (Male)",
         elevenlabs_voice_id="ErXwobaYiN019PkySvjV",   # Antoni — soft, young
         piper_model_name="en_US-lessac-medium",
+        edge_tts_voice="en-US-AndrewNeural",           # Andrew — warm, friendly
         description="Calm, soft male voice",
     ),
     "female": VoiceProfile(
@@ -58,11 +59,12 @@ VOICE_PROFILES: dict[str, VoiceProfile] = {
         label="Nexus (Female)",
         elevenlabs_voice_id="21m00Tcm4TlvDq8ikWAM",   # Rachel — warm, neutral
         piper_model_name="en_US-amy-medium",
+        edge_tts_voice="en-US-AriaNeural",             # Aria — warm, professional
         description="Warm, professional female voice",
     ),
 }
 
-DEFAULT_VOICE = "male"
+DEFAULT_VOICE = "female"
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +312,70 @@ class ElevenLabsTTS:
 
 
 # ---------------------------------------------------------------------------
+# Edge TTS (free, no API key)
+# ---------------------------------------------------------------------------
+
+class EdgeTTS:
+    """Free text-to-speech via Microsoft Edge Neural voices.
+
+    Uses the ``edge-tts`` package which accesses the same high-quality
+    Neural voices as Azure Cognitive Services — for free, no API key.
+
+    Parameters
+    ----------
+    voice : str
+        Edge TTS voice name.  Examples:
+        - ``en-US-AriaNeural`` — warm, professional female (default)
+        - ``en-US-JennyNeural`` — friendly, conversational female
+        - ``en-US-AndrewNeural`` — warm, friendly male
+        - ``en-US-GuyNeural`` — professional male
+    """
+
+    def __init__(self, voice: str = "en-US-AriaNeural") -> None:
+        self.voice = voice
+        self._available: Optional[bool] = None
+
+    @property
+    def available(self) -> bool:
+        if self._available is not None:
+            return self._available
+        try:
+            import edge_tts  # noqa: F401
+            self._available = True
+        except ImportError:
+            self._available = False
+        return self._available
+
+    def set_voice(self, voice: str) -> None:
+        """Switch to a different Edge TTS voice."""
+        self.voice = voice
+
+    def synthesize(self, text: str) -> bytes:
+        """Synthesize text to MP3 bytes via Edge TTS.
+
+        Returns MP3 audio (not WAV).  The browser's Audio element
+        auto-detects the format, so this plays correctly.
+        """
+        if not self.available:
+            raise RuntimeError("edge-tts not installed — pip install edge-tts")
+
+        import asyncio
+        import edge_tts
+
+        async def _synth() -> bytes:
+            communicate = edge_tts.Communicate(text, self.voice)
+            buf = io.BytesIO()
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    buf.write(chunk["data"])
+            return buf.getvalue()
+
+        # Safe to call asyncio.run() here because this method is invoked
+        # inside loop.run_in_executor() (a threadpool thread with no event loop).
+        return asyncio.run(_synth())
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
@@ -321,9 +387,8 @@ def create_tts_engine(
 ) -> TTSEngine:
     """Create the best available TTS engine.
 
-    Prefers Piper (local, no latency) if a model is provided and
-    the library is installed.  Falls back to ElevenLabs if an API key
-    is set.  Raises RuntimeError if neither is available.
+    Priority: Piper (local) → ElevenLabs (cloud) → Edge TTS (free).
+    Edge TTS needs no configuration and is the default.
     """
     profile = VOICE_PROFILES.get(voice_profile, VOICE_PROFILES[DEFAULT_VOICE])
 
@@ -340,7 +405,13 @@ def create_tts_engine(
             logger.info("Using ElevenLabs TTS (cloud) — %s", profile.label)
             return el  # type: ignore[return-value]
 
+    # Free fallback: Edge TTS (Microsoft Neural voices, no API key).
+    edge = EdgeTTS(voice=profile.edge_tts_voice or "en-US-AriaNeural")
+    if edge.available:
+        logger.info("Using Edge TTS (free) — %s → %s", profile.label, edge.voice)
+        return edge  # type: ignore[return-value]
+
     raise RuntimeError(
-        "No TTS engine available. Provide a Piper model path or "
-        "set ELEVENLABS_API_KEY."
+        "No TTS engine available. Install edge-tts (pip install edge-tts) "
+        "or set ELEVENLABS_API_KEY."
     )

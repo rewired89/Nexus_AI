@@ -61,6 +61,7 @@ from acheron.interface.nexus import SessionMemory
 from acheron.interface.voice.stt import WhisperSTT
 from acheron.interface.voice.tts import (
     DEFAULT_VOICE,
+    EdgeTTS,
     ElevenLabsTTS,
     LipSyncFrame,
     PiperTTS,
@@ -189,6 +190,7 @@ def create_interface_app(
     avatar = AvatarController()
 
     # TTS: build engines for both voice profiles.
+    # Priority: Piper (local) → ElevenLabs (cloud, API key) → Edge TTS (free).
     tts_engines: dict[str, object] = {}
     for profile_id, profile in VOICE_PROFILES.items():
         if piper_model:
@@ -201,13 +203,21 @@ def create_interface_app(
             tts_engines[profile_id] = ElevenLabsTTS(
                 api_key=elevenlabs_key, voice_id=voice_id
             )
+            continue
+        # Free fallback: Edge TTS (no API key needed).
+        edge = EdgeTTS(voice=profile.edge_tts_voice or "en-US-AriaNeural")
+        if edge.available:
+            tts_engines[profile_id] = edge
 
+    tts_engine_type = "none"
     if tts_engines:
-        logger.info("TTS enabled: %s", ", ".join(tts_engines.keys()))
+        sample = next(iter(tts_engines.values()))
+        tts_engine_type = type(sample).__name__
+        logger.info("TTS enabled (%s): %s", tts_engine_type, ", ".join(tts_engines.keys()))
     else:
-        logger.info(
-            "TTS not configured — browser speechSynthesis will be used as fallback. "
-            "Set ELEVENLABS_API_KEY in .env for ElevenLabs voice."
+        logger.warning(
+            "No TTS engine available. Install edge-tts (pip install edge-tts) "
+            "or set ELEVENLABS_API_KEY."
         )
 
     # Lazy-loaded pipeline to avoid import cost at startup.
@@ -302,25 +312,13 @@ def create_interface_app(
                 {"id": p.id, "label": p.label, "description": p.description}
                 for p in VOICE_PROFILES.values()
             ]
-            # Pass ElevenLabs config to frontend for client-side TTS.
-            voice_config = {}
-            if elevenlabs_key:
-                voice_config = {
-                    "elevenlabs_key": elevenlabs_key,
-                    "voice_profiles": {
-                        pid: p.elevenlabs_voice_id
-                        for pid, p in VOICE_PROFILES.items()
-                    },
-                }
-
             await send_json({
                 "type": "status",
-                "message": "Nexus online. Speak naturally — I'm listening.",
+                "message": "Nexus online.",
                 "stt_available": stt.available,
-                "tts_available": len(tts_engines) > 0 or bool(elevenlabs_key),
+                "tts_available": len(tts_engines) > 0,
                 "voices": profiles_info,
                 "active_voice": voice_profile,
-                "voice_config": voice_config,
             })
 
             # Warn user about missing configuration at connect time.
@@ -339,10 +337,9 @@ def create_interface_app(
                     "Knowledge base is empty. Run 'acheron collect' or "
                     "'acheron add <pdf>' to ingest papers."
                 )
-            if not tts_engines and not elevenlabs_key:
+            if not tts_engines:
                 _warnings.append(
-                    "No voice engine configured. Set ELEVENLABS_API_KEY or "
-                    "NEXUS_PIPER_MODEL in .env to enable voice responses."
+                    "No voice engine available. Run: pip install edge-tts"
                 )
             if _warnings:
                 await send_json({
