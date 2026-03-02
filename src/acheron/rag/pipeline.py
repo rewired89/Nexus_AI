@@ -1295,6 +1295,159 @@ class RAGPipeline:
         )
 
     # ------------------------------------------------------------------
+    # Agent-powered streaming (ReAct evidence gathering + response)
+    # ------------------------------------------------------------------
+    def agent_stream(
+        self,
+        question: str,
+        mode: Optional[str] = None,
+        messages: list[dict] | None = None,
+    ) -> Generator[str | object, None, None]:
+        """Streaming query with ReAct agent for intelligent evidence gathering.
+
+        Phase 1 — Agent decides whether to search for more evidence and
+        executes tool calls (non-streaming, silent).
+
+        Phase 2 — Generates a structured response using the SAME mode-
+        specific prompts and parsing as :meth:`analyze_stream`.
+
+        Falls back to :meth:`analyze_stream` on any agent failure so
+        the user always gets a response.
+
+        Yields ``str`` chunks during response generation, then a final
+        ``HypothesisEngineResult`` with metadata.
+        """
+        from acheron.models import NexusMode
+        from acheron.rag.agent import NexusAgent
+        from acheron.rag.hypothesis_engine import (
+            build_engine_result,
+            detect_mode,
+            get_mode_prompt,
+            get_mode_query_template,
+        )
+        from acheron.rag.live_retrieval import evidence_is_weak
+
+        detected_mode = detect_mode(question, explicit_mode=mode)
+        logger.info("Agent stream: mode=%s", detected_mode.value)
+
+        # ---- Phase 0: local retrieval (same as analyze_stream) --------
+        results = self.store.search(
+            query=question, n_results=self.n_retrieve,
+        )
+        logger.info("Agent: local retrieval returned %d chunks", len(results))
+
+        # ---- Phase 1: agent-driven evidence gathering -----------------
+        additional_results: list[QueryResult] = []
+        computation_context = ""
+        agent_used = False
+
+        try:
+            agent = NexusAgent(self)
+            additional_results, computation_context = agent.gather_evidence(
+                query=question,
+                initial_results=results,
+            )
+            agent_used = True
+            if additional_results:
+                logger.info(
+                    "Agent gathered %d additional results",
+                    len(additional_results),
+                )
+        except Exception as exc:
+            logger.warning("Agent evidence gathering failed: %s", exc)
+            # Fall back: if evidence is weak, use the existing live retrieval.
+            if evidence_is_weak(results):
+                try:
+                    from acheron.rag.live_retrieval import (
+                        live_search,
+                        persist_high_relevance,
+                    )
+                    live_results, live_papers, _ = live_search(question)
+                    additional_results = live_results
+                    if live_papers:
+                        persist_high_relevance(live_papers)
+                except Exception:
+                    pass
+
+        all_results = results + additional_results
+        live_count = len(additional_results)
+
+        # ---- Phase 2: structured response (same as analyze_stream) ----
+        collected: list[str] = []
+
+        if not all_results:
+            logger.info("Agent: no sources — LLM fallback")
+            fallback_prompt = (
+                f"Question: {question}\n\n"
+                "The local paper library is currently empty and live "
+                "retrieval returned no results. Answer this question "
+                "using your own scientific knowledge. Be accurate."
+            )
+            for chunk in self._stream_generate(
+                fallback_prompt, messages=messages,
+            ):
+                collected.append(chunk)
+                yield chunk
+            yield build_engine_result(
+                raw_output="".join(collected),
+                query=question,
+                mode=detected_mode,
+                sources=[],
+                total_searched=0,
+                model_used=self.settings.resolved_llm_model,
+                live_sources_fetched=live_count,
+            )
+            return
+
+        # Auto-escalate to hypothesis mode if evidence is still weak.
+        if detected_mode == NexusMode.EVIDENCE and evidence_is_weak(all_results):
+            detected_mode = NexusMode.HYPOTHESIS
+            logger.info("Agent: auto-escalated to hypothesis mode")
+
+        top_results = self._select_context(all_results)
+
+        # Build the mode-specific prompt (identical to analyze_stream).
+        system_prompt = get_mode_prompt(detected_mode)
+        query_template = get_mode_query_template(
+            detected_mode, query=question,
+        )
+        context_str = self._format_context(top_results)
+
+        # Inject any computation context the agent produced.
+        if computation_context:
+            context_str = context_str + "\n\n" + computation_context
+
+        user_prompt = query_template.format(
+            context=context_str, query=question,
+        )
+
+        gen_messages = messages
+        if gen_messages is not None:
+            gen_messages = list(gen_messages)
+            gen_messages.append({"role": "user", "content": user_prompt})
+        else:
+            gen_messages = None
+
+        for chunk in self._stream_generate_with_system(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=4000,
+            messages=gen_messages,
+        ):
+            collected.append(chunk)
+            yield chunk
+
+        yield build_engine_result(
+            raw_output="".join(collected),
+            query=question,
+            mode=detected_mode,
+            sources=top_results,
+            total_searched=len(all_results),
+            model_used=self.settings.resolved_llm_model,
+            live_sources_fetched=live_count,
+        )
+
+    # ------------------------------------------------------------------
     # Internal — context selection
     # ------------------------------------------------------------------
     def _select_context(

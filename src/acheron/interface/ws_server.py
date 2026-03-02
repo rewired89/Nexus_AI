@@ -567,7 +567,10 @@ async def _process_query(
                     for s in getattr(metadata, "sources", [])
                 ] if metadata else []
             else:
-                gen = pipeline.analyze_stream(
+                # Use the ReAct agent for intelligent evidence
+                # gathering.  Falls back to analyze_stream internally
+                # if the agent encounters any errors.
+                gen = pipeline.agent_stream(
                     query, mode=explicit_mode, messages=messages,
                 )
                 text_chunks, metadata = await asyncio.wait_for(
