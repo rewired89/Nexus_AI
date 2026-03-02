@@ -670,11 +670,22 @@ class RAGPipeline:
         logger.info("Retrieved %d chunks for query", len(results))
 
         if not results:
+            # No papers in vectorstore — fall back to the LLM's own knowledge
+            # so users still get useful answers before ingesting papers.
+            logger.info("Vectorstore empty/no hits — falling back to LLM knowledge")
+            fallback_prompt = (
+                f"Question: {question}\n\n"
+                "The local paper library is currently empty, so there are no "
+                "retrieved source passages to cite. Answer the question using "
+                "your own scientific knowledge. Be accurate and helpful. "
+                "Where possible, mention key concepts, mechanisms, and "
+                "well-established findings. Note that you are answering from "
+                "general knowledge, not from indexed papers."
+            )
+            raw_answer = self._generate(fallback_prompt)
             return RAGResponse(
                 query=question,
-                answer="No relevant sources found in the index. "
-                "The Library contains no material matching this query. "
-                "Add papers with 'acheron collect' or 'acheron add'.",
+                answer=raw_answer,
                 sources=[],
                 model_used=self.settings.resolved_llm_model,
             )
@@ -786,16 +797,25 @@ class RAGPipeline:
         )
 
         if not results:
-            collection_queries = generate_collection_queries(parsed)
+            # No papers — fall back to LLM knowledge
+            logger.info("Discovery: no sources — falling back to LLM knowledge")
+            fallback_prompt = (
+                f"Question: {question}\n\n"
+                "The local paper library is currently empty. Answer this "
+                "question using your own scientific knowledge. Be accurate "
+                "and helpful. Mention key mechanisms and well-established "
+                "findings. Note that you are answering from general "
+                "knowledge, not from indexed papers."
+            )
+            raw_output = self._generate(fallback_prompt, max_tokens=3000)
             return DiscoveryResult(
                 query=question,
-                evidence=["No sources retrieved."],
+                evidence=[],
                 uncertainty_notes=[
-                    "Library contains no material for this query.",
-                    "Suggested collection queries:",
-                    *[f"  - {q}" for q in collection_queries],
+                    "Answered from LLM knowledge (no papers in library).",
                 ],
                 model_used=self.settings.resolved_llm_model,
+                raw_output=raw_output,
             )
 
         # Stage C — Score and filter (via _select_context with science-first)
@@ -898,14 +918,25 @@ class RAGPipeline:
                 logger.warning("Live retrieval failed: %s", exc)
 
         if not results:
-            return HypothesisEngineResult(
+            # No papers available — use LLM knowledge as fallback
+            logger.info("No sources after retrieval — falling back to LLM knowledge")
+            fallback_prompt = (
+                f"Question: {question}\n\n"
+                "The local paper library is currently empty and live retrieval "
+                "returned no results. Answer this question using your own "
+                "scientific knowledge. Be accurate and helpful, mention key "
+                "mechanisms and well-established findings. Note that you are "
+                "answering from general knowledge, not from indexed papers."
+            )
+            raw_output = self._generate(fallback_prompt)
+            return build_engine_result(
+                raw_output=raw_output,
                 query=question,
                 mode=detected_mode,
-                uncertainty_notes=[
-                    "No sources retrieved from local index or live search.",
-                    "Add papers with 'acheron collect' or try --live flag.",
-                ],
+                sources=[],
+                total_searched=0,
                 model_used=self.settings.resolved_llm_model,
+                live_sources_fetched=live_count,
             )
 
         # If evidence is still weak after live fetch, auto-enter hypothesis mode

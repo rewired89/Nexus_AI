@@ -199,9 +199,11 @@ def create_interface_app(
                 tts_engines[profile_id] = engine
                 continue
         if elevenlabs_key:
-            voice_id = elevenlabs_voice or profile.elevenlabs_voice_id
+            # Always use the profile-specific voice, not the global override,
+            # so male/female actually sound different.
+            vid = profile.elevenlabs_voice_id
             tts_engines[profile_id] = ElevenLabsTTS(
-                api_key=elevenlabs_key, voice_id=voice_id
+                api_key=elevenlabs_key, voice_id=vid
             )
             continue
         # Free fallback: Edge TTS (no API key needed).
