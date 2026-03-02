@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
+from typing import Generator, Optional
 
 from acheron.config import get_settings
 from acheron.models import (
@@ -1015,6 +1015,284 @@ class RAGPipeline:
                 f"is misconfigured.\nRetrieval-only mode still works (acheron query -r). "
                 f"Check your API key and provider settings.\nDetail: {exc}"
             )
+
+    # ------------------------------------------------------------------
+    # Streaming generation — yields text chunks as they arrive
+    # ------------------------------------------------------------------
+
+    def _stream_generate(
+        self,
+        user_prompt: str,
+        max_tokens: int = 2048,
+        messages: list[dict] | None = None,
+    ) -> Generator[str, None, None]:
+        """Yield LLM text chunks as they stream in.
+
+        When *messages* is provided, the full multi-turn conversation
+        history is sent (and *user_prompt* is ignored).  Otherwise a
+        single-turn ``[{"role": "user", "content": user_prompt}]`` is
+        used — matching the behaviour of :meth:`_generate`.
+        """
+        yield from self._stream_generate_with_system(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            max_tokens=max_tokens,
+            messages=messages,
+        )
+
+    def _stream_generate_with_system(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 2048,
+        messages: list[dict] | None = None,
+    ) -> Generator[str, None, None]:
+        """Yield LLM text chunks with a custom system prompt.
+
+        Falls back to non-streaming batch call (yielding the full text
+        at once) if the provider does not support streaming.
+        """
+        model = self.settings.resolved_llm_model
+
+        try:
+            client = self._get_client()
+        except RuntimeError as exc:
+            logger.error("LLM client init failed: %s", exc)
+            yield (
+                f"Error: Compute layer unavailable. Provider '{self._provider}' "
+                f"is misconfigured.\n{exc}\n"
+                "Retrieval-only mode still works (acheron query -r)."
+            )
+            return
+
+        msgs = messages or [{"role": "user", "content": user_prompt}]
+
+        try:
+            if self._provider == "anthropic":
+                with client.messages.stream(
+                    model=model,
+                    system=system_prompt,
+                    messages=msgs,
+                    temperature=0.2,
+                    max_tokens=max_tokens,
+                ) as stream:
+                    for text in stream.text_stream:
+                        yield text
+            else:
+                # OpenAI-compatible streaming
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        *msgs,
+                    ],
+                    temperature=0.2,
+                    max_tokens=max_tokens,
+                    stream=True,
+                )
+                for chunk in response:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if delta and delta.content:
+                        yield delta.content
+        except Exception as exc:
+            logger.exception(
+                "LLM streaming failed (provider=%s)", self._provider
+            )
+            yield (
+                f"Error: Compute layer unavailable. Provider '{self._provider}' "
+                f"is misconfigured.\nDetail: {exc}"
+            )
+
+    # ------------------------------------------------------------------
+    # Streaming-aware query entry points
+    # ------------------------------------------------------------------
+
+    def query_stream(
+        self,
+        question: str,
+        filter_source: Optional[str] = None,
+        n_results: Optional[int] = None,
+        messages: list[dict] | None = None,
+    ) -> Generator[str | RAGResponse, None, None]:
+        """Streaming variant of :meth:`query`.
+
+        Yields ``str`` chunks as the LLM generates them.  After the
+        final chunk, yields a single :class:`RAGResponse` with the
+        complete answer and source metadata.
+        """
+        n = n_results or self.n_retrieve
+        results = self.store.search(
+            query=question, n_results=n, filter_source=filter_source
+        )
+        logger.info("Retrieved %d chunks for query (stream)", len(results))
+
+        collected: list[str] = []
+
+        if not results:
+            logger.info("Vectorstore empty — falling back to LLM knowledge (stream)")
+            fallback_prompt = (
+                f"Question: {question}\n\n"
+                "The local paper library is currently empty, so there are no "
+                "retrieved source passages to cite. Answer the question using "
+                "your own scientific knowledge. Be accurate and helpful. "
+                "Where possible, mention key concepts, mechanisms, and "
+                "well-established findings. Note that you are answering from "
+                "general knowledge, not from indexed papers."
+            )
+            for chunk in self._stream_generate(fallback_prompt, messages=messages):
+                collected.append(chunk)
+                yield chunk
+            yield RAGResponse(
+                query=question,
+                answer="".join(collected),
+                sources=[],
+                model_used=self.settings.resolved_llm_model,
+            )
+            return
+
+        top_results = self._select_context(results)
+        context_str = self._format_context(top_results)
+        user_prompt = QUERY_TEMPLATE.format(context=context_str, query=question)
+
+        gen_messages = messages
+        if gen_messages is not None:
+            # Append the context-enriched prompt as the last user message.
+            gen_messages = list(gen_messages)
+            gen_messages.append({"role": "user", "content": user_prompt})
+        else:
+            gen_messages = None  # _stream_generate will use user_prompt
+
+        for chunk in self._stream_generate(user_prompt, messages=gen_messages):
+            collected.append(chunk)
+            yield chunk
+
+        raw_answer = "".join(collected)
+        evidence, inference, speculation, schematic = self._parse_epistemic_sections(
+            raw_answer
+        )
+        yield RAGResponse(
+            query=question,
+            answer=raw_answer,
+            sources=top_results,
+            model_used=self.settings.resolved_llm_model,
+            total_chunks_searched=len(results),
+            evidence_statements=evidence,
+            inference_statements=inference,
+            speculation_statements=speculation,
+            bioelectric_schematic=schematic,
+        )
+
+    def analyze_stream(
+        self,
+        question: str,
+        mode: Optional[str] = None,
+        live: bool = False,
+        filter_source: Optional[str] = None,
+        n_results: Optional[int] = None,
+        messages: list[dict] | None = None,
+    ) -> Generator[str | object, None, None]:
+        """Streaming variant of :meth:`analyze`.
+
+        Yields ``str`` chunks during LLM generation, then a final
+        ``HypothesisEngineResult`` with metadata.
+        """
+        from acheron.models import NexusMode
+        from acheron.rag.hypothesis_engine import (
+            build_engine_result,
+            detect_mode,
+            get_mode_prompt,
+            get_mode_query_template,
+        )
+        from acheron.rag.live_retrieval import (
+            evidence_is_weak,
+            live_search,
+            persist_high_relevance,
+        )
+
+        n = n_results or self.n_retrieve
+        detected_mode = detect_mode(question, explicit_mode=mode)
+        logger.info("Analyze (stream): mode=%s, live=%s", detected_mode.value, live)
+
+        results = self.store.search(
+            query=question, n_results=n, filter_source=filter_source
+        )
+        logger.info("Local retrieval: %d chunks", len(results))
+
+        live_count = 0
+        if live or evidence_is_weak(results):
+            logger.info("Triggering live retrieval (stream) for: %s", question)
+            try:
+                live_results, live_papers, live_chunk_count = live_search(question)
+                live_count = live_chunk_count
+                results.extend(live_results)
+                logger.info("Live retrieval added %d chunks from %d papers",
+                            live_chunk_count, len(live_papers))
+                if live_papers:
+                    persisted = persist_high_relevance(live_papers)
+                    if persisted:
+                        logger.info("Persisted %d live papers", persisted)
+            except Exception as exc:
+                logger.warning("Live retrieval failed: %s", exc)
+
+        collected: list[str] = []
+
+        if not results:
+            logger.info("No sources — LLM fallback (stream)")
+            fallback_prompt = (
+                f"Question: {question}\n\n"
+                "The local paper library is currently empty and live retrieval "
+                "returned no results. Answer this question using your own "
+                "scientific knowledge. Be accurate and helpful."
+            )
+            for chunk in self._stream_generate(fallback_prompt, messages=messages):
+                collected.append(chunk)
+                yield chunk
+            yield build_engine_result(
+                raw_output="".join(collected),
+                query=question,
+                mode=detected_mode,
+                sources=[],
+                total_searched=0,
+                model_used=self.settings.resolved_llm_model,
+                live_sources_fetched=live_count,
+            )
+            return
+
+        if detected_mode == NexusMode.EVIDENCE and evidence_is_weak(results):
+            detected_mode = NexusMode.HYPOTHESIS
+            logger.info("Auto-escalated to hypothesis mode (stream)")
+
+        top_results = self._select_context(results)
+        system_prompt = get_mode_prompt(detected_mode)
+        query_template = get_mode_query_template(detected_mode, query=question)
+        context_str = self._format_context(top_results)
+        user_prompt = query_template.format(context=context_str, query=question)
+
+        gen_messages = messages
+        if gen_messages is not None:
+            gen_messages = list(gen_messages)
+            gen_messages.append({"role": "user", "content": user_prompt})
+        else:
+            gen_messages = None
+
+        for chunk in self._stream_generate_with_system(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=4000,
+            messages=gen_messages,
+        ):
+            collected.append(chunk)
+            yield chunk
+
+        yield build_engine_result(
+            raw_output="".join(collected),
+            query=question,
+            mode=detected_mode,
+            sources=top_results,
+            total_searched=len(results),
+            model_used=self.settings.resolved_llm_model,
+            live_sources_fetched=live_count,
+        )
 
     # ------------------------------------------------------------------
     # Internal — context selection

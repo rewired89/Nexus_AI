@@ -28,12 +28,14 @@ Text frames are JSON::
     {"type": "status", "message": "..."}
     {"type": "listening"}             # server ready for next utterance
     {"type": "transcription", "text": "..."}
-    {"type": "response", "answer": "...", "sources": [...], ...}
+    {"type": "response_chunk", "text": "..."}  # streaming LLM text fragment
+    {"type": "response", "answer": "...", "sources": [...], ...}  # final complete response
     {"type": "interrupted"}           # response was cancelled
     {"type": "avatar", ...animation params...}
     {"type": "error", "message": "..."}
 
-Binary frames are WAV audio of the TTS response.
+Binary frames are WAV audio of the TTS response (sent in sentence-sized
+chunks for progressive playback).
 """
 
 from __future__ import annotations
@@ -469,8 +471,32 @@ def create_interface_app(
 
 
 # ---------------------------------------------------------------------------
-# Query processing
+# Query processing  (streaming)
 # ---------------------------------------------------------------------------
+
+# Sentence-boundary pattern used to split TTS chunks at natural pauses.
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+|(?<=\.)\n")
+
+# Maximum characters to speak aloud (prevents 5-minute monologues).
+_MAX_SPEECH_CHARS = 1500
+
+
+def _iter_stream_in_thread(generator):
+    """Consume a blocking generator and return items as a list.
+
+    Runs inside ``run_in_executor`` so the async loop is never blocked.
+    Separates string text chunks from the final metadata object that
+    the pipeline yields last.
+    """
+    chunks: list[str] = []
+    metadata = None
+    for item in generator:
+        if isinstance(item, str):
+            chunks.append(item)
+        else:
+            metadata = item
+    return chunks, metadata
+
 
 async def _process_query(
     ws: WebSocket,
@@ -485,62 +511,81 @@ async def _process_query(
     send_avatar_state,  # type: ignore[type-arg]
     interrupted: asyncio.Event,
 ) -> None:
-    """Run a query through the pipeline and send results back."""
+    """Run a query through the pipeline, streaming results back.
+
+    Text chunks are sent to the client as they arrive from the LLM so
+    the user sees the response being "typed".  TTS is synthesised in
+    sentence-sized chunks and audio frames are sent progressively —
+    Nexus starts speaking within ~1-2 s of the first sentence.
+    """
     loop = asyncio.get_event_loop()
 
     try:
         pipeline = get_pipeline()
 
-        # Enrich with session context.
-        enriched = memory.enrich_query(query)
+        # Build multi-turn messages for the LLM.
+        memory.record_message("user", query)
+        messages = memory.get_messages_for_llm(query)
 
         await send_json({"type": "status", "message": "Thinking..."})
 
         if interrupted.is_set():
             return
 
-        # Run the pipeline in a threadpool with a timeout.
-        # The pipeline can take very long when live retrieval triggers
-        # (PubMed fetch). Cap at 90 seconds to avoid indefinite waits.
+        # -----------------------------------------------------------
+        # Kick off the streaming pipeline in a thread.
+        # -----------------------------------------------------------
         _QUERY_TIMEOUT = 90  # seconds
 
         try:
             if query_mode == "discover":
+                # discover() doesn't have a streaming variant yet — use
+                # the batch path and fall back to non-streaming.
                 result = await asyncio.wait_for(
                     loop.run_in_executor(
-                        None, lambda: pipeline.discover(enriched)
+                        None, lambda: pipeline.discover(query)
                     ),
                     timeout=_QUERY_TIMEOUT,
                 )
-                answer = _format_discovery(result)
+                text_chunks = [_format_discovery(result)]
+                metadata = result
                 mode_used = getattr(result, "detected_mode", "discovery")
                 sources = [
                     _source_to_dict(s) for s in getattr(result, "sources", [])
                 ]
             elif query_mode == "query":
-                result = await asyncio.wait_for(
+                gen = pipeline.query_stream(query, messages=messages)
+                text_chunks, metadata = await asyncio.wait_for(
                     loop.run_in_executor(
-                        None, lambda: pipeline.query(enriched)
+                        None, _iter_stream_in_thread, gen
                     ),
                     timeout=_QUERY_TIMEOUT,
                 )
-                answer = result.answer
                 mode_used = "evidence"
-                sources = [_source_to_dict(s) for s in result.sources]
+                sources = [
+                    _source_to_dict(s)
+                    for s in getattr(metadata, "sources", [])
+                ] if metadata else []
             else:
-                # Default: analyze (hypothesis engine).
-                result = await asyncio.wait_for(
+                gen = pipeline.analyze_stream(
+                    query, mode=explicit_mode, messages=messages,
+                )
+                text_chunks, metadata = await asyncio.wait_for(
                     loop.run_in_executor(
-                        None,
-                        lambda: pipeline.analyze(enriched, mode=explicit_mode),
+                        None, _iter_stream_in_thread, gen
                     ),
                     timeout=_QUERY_TIMEOUT,
                 )
-                answer = result.raw_output
-                mode_used = result.mode.value if hasattr(result.mode, "value") else str(result.mode)
+                mode_used = (
+                    metadata.mode.value
+                    if metadata and hasattr(getattr(metadata, "mode", None), "value")
+                    else str(getattr(metadata, "mode", "analyze"))
+                )
                 sources = [
-                    _source_to_dict(s) for s in getattr(result, "sources", [])
-                ]
+                    _source_to_dict(s)
+                    for s in getattr(metadata, "sources", [])
+                ] if metadata else []
+
         except asyncio.TimeoutError:
             logger.warning("Query timed out after %ds: %s", _QUERY_TIMEOUT, query[:80])
             avatar.transition(AvatarState.ERROR)
@@ -550,7 +595,7 @@ async def _process_query(
                 "answer": (
                     "The query took too long (over 90 seconds). "
                     "This usually happens when I need to search external databases "
-                    "like PubMed for papers. Try switching to **Query** mode "
+                    "like PubMed for papers. Try switching to Query mode "
                     "(faster, uses only local knowledge) or rephrase your question."
                 ),
                 "sources": [],
@@ -564,19 +609,20 @@ async def _process_query(
         if interrupted.is_set():
             return
 
-        # Record in session memory.
-        topics = _extract_topics(query)
-        memory.record_turn(
-            query=query,
-            mode=mode_used,
-            response_summary=answer[:300],
-            topics=topics,
-        )
+        answer = "".join(text_chunks)
 
-        # Send response.
+        # -----------------------------------------------------------
+        # Stream text chunks to the client.
+        # -----------------------------------------------------------
         avatar.transition(AvatarState.SPEAKING)
         await send_avatar_state()
 
+        for chunk in text_chunks:
+            if interrupted.is_set():
+                return
+            await send_json({"type": "response_chunk", "text": chunk})
+
+        # Final complete response with metadata.
         await send_json({
             "type": "response",
             "answer": answer,
@@ -588,31 +634,68 @@ async def _process_query(
         if interrupted.is_set():
             return
 
-        # TTS if available.
+        # Record in session memory (both legacy + multi-turn).
+        topics = _extract_topics(query)
+        memory.record_turn(
+            query=query,
+            mode=mode_used,
+            response_summary=answer[:300],
+            topics=topics,
+        )
+        memory.record_message("assistant", answer)
+
+        # -----------------------------------------------------------
+        # Chunked TTS — synthesise sentence by sentence.
+        # -----------------------------------------------------------
         if tts_engine is not None:
             try:
-                # Clean markdown and truncate for natural-sounding speech.
-                tts_text = _strip_markdown_for_speech(answer)
-                tts_text = _truncate_for_speech(tts_text, max_chars=1500)
-                wav = await loop.run_in_executor(
-                    None, tts_engine.synthesize, tts_text  # type: ignore[union-attr]
-                )
+                clean_text = _strip_markdown_for_speech(answer)
+                # Split into sentence-sized chunks for progressive TTS.
+                sentences = _SENTENCE_END.split(clean_text)
+                # Merge very short fragments with the previous sentence.
+                merged: list[str] = []
+                for s in sentences:
+                    s = s.strip()
+                    if not s:
+                        continue
+                    if merged and len(merged[-1]) < 40:
+                        merged[-1] = merged[-1] + " " + s
+                    else:
+                        merged.append(s)
 
-                if interrupted.is_set():
-                    return
+                spoken_chars = 0
+                for sentence in merged:
+                    if interrupted.is_set():
+                        return
+                    if spoken_chars >= _MAX_SPEECH_CHARS:
+                        break
 
-                # Extract lip-sync data and send it first.
-                lip_frames = extract_lip_sync(wav)
-                timeline = LipSyncTimeline(
-                    frames=[f.amplitude for f in lip_frames],
-                    frame_duration_ms=50.0,
-                )
-                avatar.set_lip_sync(timeline)
+                    sentence = sentence[:_MAX_SPEECH_CHARS - spoken_chars]
+                    spoken_chars += len(sentence)
+
+                    wav = await loop.run_in_executor(
+                        None,
+                        tts_engine.synthesize,  # type: ignore[union-attr]
+                        sentence,
+                    )
+
+                    if interrupted.is_set():
+                        return
+
+                    # Lip-sync for this audio chunk.
+                    lip_frames = extract_lip_sync(wav)
+                    timeline = LipSyncTimeline(
+                        frames=[f.amplitude for f in lip_frames],
+                        frame_duration_ms=50.0,
+                    )
+                    avatar.set_lip_sync(timeline)
+                    await send_avatar_state()
+
+                    # Send audio chunk — client appends to playback queue.
+                    await ws.send_bytes(wav)
+
+                avatar.transition(AvatarState.IDLE)
                 await send_avatar_state()
-
-                # Send audio as binary frame.
-                await ws.send_bytes(wav)
-
             except Exception:
                 logger.exception("TTS synthesis failed")
                 avatar.transition(AvatarState.IDLE)

@@ -81,6 +81,9 @@ _CONTEXT_WINDOW = 20  # turns to consider for enrichment
 _TOPIC_DEDUP_WINDOW = 50  # recent topics to de-duplicate
 
 
+_MAX_MESSAGE_HISTORY = 20  # max user/assistant turns to send to the LLM
+
+
 class SessionMemory:
     """Persistent session memory backed by a JSON file.
 
@@ -96,6 +99,8 @@ class SessionMemory:
         self.history: list[ConversationTurn] = []
         self.experiments: list[ExperimentRecord] = []
         self.project_notes: list[str] = []
+        # Multi-turn message history for the LLM (user/assistant pairs).
+        self.message_history: list[dict[str, str]] = []
         self._load()
 
     # -- persistence --------------------------------------------------------
@@ -175,6 +180,26 @@ class SessionMemory:
         """Add a free-form project note."""
         self.project_notes.append(note)
         self.save()
+
+    # -- multi-turn message history ----------------------------------------
+
+    def record_message(self, role: str, content: str) -> None:
+        """Append a user or assistant message to the LLM conversation history."""
+        self.message_history.append({"role": role, "content": content})
+        # Keep bounded so we don't blow up context.
+        if len(self.message_history) > _MAX_MESSAGE_HISTORY * 2:
+            self.message_history = self.message_history[-_MAX_MESSAGE_HISTORY * 2:]
+
+    def get_messages_for_llm(self, current_query: str) -> list[dict[str, str]]:
+        """Return the conversation history formatted for the LLM API.
+
+        Includes recent turns plus the current user query as the last
+        message.  The caller should pass this to the pipeline's
+        streaming methods.
+        """
+        # Take the most recent turns (each turn = user + assistant = 2 msgs).
+        recent = self.message_history[-_MAX_MESSAGE_HISTORY * 2:]
+        return [*recent, {"role": "user", "content": current_query}]
 
     # -- context enrichment -------------------------------------------------
 

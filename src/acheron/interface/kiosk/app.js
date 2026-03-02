@@ -41,6 +41,15 @@ let isSpeaking = false; // Nexus is speaking
 let awaitingServerAudio = false; // expecting audio from server
 let serverAudioTimer = null;
 
+// Audio queue — sentence-sized WAV chunks arrive progressively.
+const audioQueue = [];
+let audioPlaying = false;
+
+// Streaming text state — accumulates response_chunk fragments.
+let streamingDiv = null;
+let streamingBody = null;
+let streamingText = "";
+
 // DOM references (set in DOMContentLoaded)
 let responsePanel, queryInput, micBtn, sendBtn, modeSelect, voiceSelect;
 let statusDot, statusText, avatarCanvas, avatarLabel, avatarGlow;
@@ -365,8 +374,30 @@ function handleMessage(msg) {
             appendThinkingIndicator();
             break;
 
+        case "response_chunk":
+            // Progressive text streaming — append to a live message div.
+            removeThinkingIndicator();
+            streamingText += msg.text;
+            if (!streamingDiv) {
+                streamingDiv = document.createElement("div");
+                streamingDiv.className = "message system streaming";
+                streamingBody = document.createElement("div");
+                streamingDiv.appendChild(streamingBody);
+                responsePanel.appendChild(streamingDiv);
+            }
+            streamingBody.innerHTML = formatMarkdown(streamingText);
+            responsePanel.scrollTop = responsePanel.scrollHeight;
+            break;
+
         case "response":
             removeThinkingIndicator();
+            // Replace streaming preview with the final rendered response.
+            if (streamingDiv) {
+                streamingDiv.remove();
+                streamingDiv = null;
+                streamingBody = null;
+                streamingText = "";
+            }
             renderResponse(msg);
             // Wait for server audio (Edge TTS / ElevenLabs).
             // If no audio arrives within 5s, just go idle (no robot voice).
@@ -530,44 +561,59 @@ function sendTextQuery() {
 // ---------------------------------------------------------------------------
 
 function playAudio(blob) {
-    // Server audio arrived — cancel browser TTS fallback.
+    // Server audio arrived — cancel browser TTS fallback timer.
     awaitingServerAudio = false;
     clearTimeout(serverAudioTimer);
-    stopAudio(); // Stop any previous playback.
 
-    const url = URL.createObjectURL(blob);
-    currentAudio = new Audio(url);
-    isSpeaking = true;
-    setAvatarState("speaking");
+    // Queue this chunk for sequential playback.
+    audioQueue.push(blob);
+    if (!audioPlaying) {
+        _playNext();
+    }
+}
 
-    currentAudio.onended = () => {
-        URL.revokeObjectURL(url);
+function _playNext() {
+    if (audioQueue.length === 0) {
+        audioPlaying = false;
         isSpeaking = false;
         currentAudio = null;
         setAvatarState("idle");
         setListeningActive(true);
+        return;
+    }
+    audioPlaying = true;
+    isSpeaking = true;
+    setAvatarState("speaking");
+
+    const blob = audioQueue.shift();
+    const url = URL.createObjectURL(blob);
+    currentAudio = new Audio(url);
+
+    currentAudio.onended = () => {
+        URL.revokeObjectURL(url);
+        _playNext(); // Play next chunk in queue.
     };
 
     currentAudio.onerror = () => {
         URL.revokeObjectURL(url);
-        isSpeaking = false;
-        currentAudio = null;
-        setAvatarState("idle");
+        _playNext(); // Skip broken chunk, continue.
     };
 
     currentAudio.play().catch((err) => {
         console.error("Audio playback failed:", err);
-        isSpeaking = false;
-        currentAudio = null;
+        _playNext();
     });
 }
 
 function stopAudio() {
+    // Flush entire queue and stop current playback.
+    audioQueue.length = 0;
     if (currentAudio) {
         currentAudio.pause();
         currentAudio.currentTime = 0;
         currentAudio = null;
     }
+    audioPlaying = false;
     isSpeaking = false;
 }
 
