@@ -391,6 +391,9 @@ function handleMessage(msg) {
 
         case "response":
             removeThinkingIndicator();
+            // Stop any audio still playing from a previous response
+            // before rendering the new one.
+            stopAudio();
             // Replace streaming preview with the final rendered response.
             if (streamingDiv) {
                 streamingDiv.remove();
@@ -547,6 +550,9 @@ function sendTextQuery() {
     const raw = queryInput.value.trim();
     if (!raw || !ws || ws.readyState !== WebSocket.OPEN) return;
 
+    // Stop any audio from the previous response before sending a new query.
+    stopAudio();
+
     const query = capitalizeFirst(raw);
     appendMessage("user", query, "You");
     appendThinkingIndicator();
@@ -587,21 +593,29 @@ function _playNext() {
 
     const blob = audioQueue.shift();
     const url = URL.createObjectURL(blob);
-    currentAudio = new Audio(url);
+    const audio = new Audio(url);
+    currentAudio = audio;
 
-    currentAudio.onended = () => {
+    // Guard against double _playNext() calls — both onerror and
+    // play().catch() can fire for the same element on failure.
+    let advanced = false;
+    function advance() {
+        if (advanced) return;
+        advanced = true;
         URL.revokeObjectURL(url);
-        _playNext(); // Play next chunk in queue.
-    };
+        // Only advance if this audio is still the current one
+        // (stopAudio may have reset the state already).
+        if (currentAudio === audio) {
+            _playNext();
+        }
+    }
 
-    currentAudio.onerror = () => {
-        URL.revokeObjectURL(url);
-        _playNext(); // Skip broken chunk, continue.
-    };
+    audio.onended = advance;
+    audio.onerror = advance;
 
-    currentAudio.play().catch((err) => {
+    audio.play().catch((err) => {
         console.error("Audio playback failed:", err);
-        _playNext();
+        advance();
     });
 }
 
