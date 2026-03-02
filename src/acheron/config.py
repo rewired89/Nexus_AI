@@ -194,5 +194,20 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return a cached Settings instance."""
     if not hasattr(get_settings, "_instance"):
-        get_settings._instance = Settings()  # type: ignore[attr-defined]
+        try:
+            get_settings._instance = Settings()  # type: ignore[attr-defined]
+        except UnicodeDecodeError:
+            # .env file has non-UTF-8 bytes (e.g. Windows-1252 em dash).
+            # Delete the corrupt file and retry so the app can start.
+            import warnings
+
+            env_path = _PROJECT_ROOT / ".env"
+            if env_path.exists():
+                env_path.unlink()
+                warnings.warn(
+                    f"Removed corrupt .env file ({env_path}). "
+                    "It will be recreated on next 'nexus interface' launch.",
+                    stacklevel=2,
+                )
+            get_settings._instance = Settings()  # type: ignore[attr-defined]
     return get_settings._instance  # type: ignore[attr-defined]

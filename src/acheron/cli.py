@@ -1134,14 +1134,14 @@ def interface(
         if ant_key:
             lines = [
                 "# Nexus AI configuration",
-                "# This file is NOT tracked by git — safe for API keys.",
+                "# This file is NOT tracked by git - safe for API keys.",
                 "",
             ]
             lines.append(f"ANTHROPIC_API_KEY={ant_key}")
             if el_key:
                 lines.append(f"ELEVENLABS_API_KEY={el_key}")
             lines.append("")
-            _env_path.write_text("\n".join(lines))
+            _env_path.write_text("\n".join(lines), encoding="utf-8")
             console.print(f"\n[green]Saved to {_env_path}[/green]\n")
             # Reload settings so the rest of startup picks up the new keys.
             if hasattr(get_settings, "_instance"):
@@ -1149,7 +1149,7 @@ def interface(
             settings = get_settings()
         else:
             console.print(
-                "\n[dim]Skipped — Nexus will start but won't be able to "
+                "\n[dim]Skipped - Nexus will start but won't be able to "
                 "answer questions until an API key is set.[/dim]\n"
             )
     app = create_interface_app(
