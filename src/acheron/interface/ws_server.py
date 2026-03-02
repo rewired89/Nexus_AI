@@ -591,8 +591,9 @@ async def _process_query(
         # TTS if available.
         if tts_engine is not None:
             try:
-                # Truncate for TTS — long answers would take forever.
-                tts_text = _truncate_for_speech(answer, max_chars=1500)
+                # Clean markdown and truncate for natural-sounding speech.
+                tts_text = _strip_markdown_for_speech(answer)
+                tts_text = _truncate_for_speech(tts_text, max_chars=1500)
                 wav = await loop.run_in_executor(
                     None, tts_engine.synthesize, tts_text  # type: ignore[union-attr]
                 )
@@ -672,6 +673,45 @@ def _format_discovery(result: object) -> str:
     if raw and not parts:
         return raw
     return "\n\n".join(parts) if parts else "No results."
+
+
+def _strip_markdown_for_speech(text: str) -> str:
+    """Convert markdown-formatted text into clean, natural prose for TTS.
+
+    Removes headers, bullet points, bold/italic markers, links, code
+    fences, and other formatting that a TTS engine would read literally
+    (e.g. "hashtag hashtag Evidence" instead of just "Evidence").
+    """
+    # Remove code fences  ```...```
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    # Remove inline code  `...`
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    # Remove markdown images  ![alt](url)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    # Convert links  [text](url) → text
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    # Remove header markers  ## Header → Header
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
+    # Remove bold/italic  ***text***, **text**, *text*, __text__, _text_
+    text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)
+    text = re.sub(r"_{1,3}([^_]+)_{1,3}", r"\1", text)
+    # Remove strikethrough  ~~text~~
+    text = re.sub(r"~~([^~]+)~~", r"\1", text)
+    # Convert bullet lines  "- item" or "* item" → "item."
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
+    # Convert numbered lists  "1. item" → "item."
+    text = re.sub(r"^\s*\d+[.)]\s+", "", text, flags=re.MULTILINE)
+    # Remove horizontal rules  --- or ***
+    text = re.sub(r"^[\s]*[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
+    # Remove blockquote markers  > text → text
+    text = re.sub(r"^>\s*", "", text, flags=re.MULTILINE)
+    # Remove HTML tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Collapse multiple newlines into a pause-friendly double newline
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # Collapse multiple spaces
+    text = re.sub(r"  +", " ", text)
+    return text.strip()
 
 
 def _truncate_for_speech(text: str, max_chars: int = 1500) -> str:
