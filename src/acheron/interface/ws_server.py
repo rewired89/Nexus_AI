@@ -91,54 +91,6 @@ def is_interrupt_command(text: str) -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
-# Domain scope check — fast reject for out-of-scope questions
-# ---------------------------------------------------------------------------
-
-# Keywords that indicate a biotechnology / life-science question.
-_BIOTECH_KEYWORDS = re.compile(
-    r"\b("
-    r"cell|cells|gene|genes|genetic|genome|genomic|protein|proteins|enzyme|"
-    r"DNA|RNA|mRNA|tRNA|rRNA|plasmid|vector|CRISPR|cas9|"
-    r"biology|biological|biotech|biotechnology|bioinformatics|"
-    r"organism|species|bacteria|bacterial|virus|viral|fungal|fungi|"
-    r"tissue|organ|membrane|cytoplasm|nucleus|mitochondria|ribosome|"
-    r"planarian|flatworm|regenerat|stem\s*cell|bioelectric|"
-    r"receptor|ligand|signal|pathway|cascade|apoptosis|necrosis|"
-    r"PCR|electrophoresis|chromatography|spectroscopy|assay|"
-    r"physics|quantum|thermodynamic|kinetic|entropy|"
-    r"chemistry|chemical|molecule|molecular|compound|reaction|"
-    r"math|equation|calculus|algebra|statistics|probability|"
-    r"ferment|cloning|expression|transcription|translation|"
-    r"mutation|polymorphism|allele|phenotype|genotype|"
-    r"microscop|centrifug|pipett|incubat|buffer|"
-    r"anatomy|physiology|neuron|synapse|axon|dendrite|"
-    r"immunology|antibody|antigen|immune|lymphocyte|"
-    r"pharmacology|drug|therapeutic|dosage|toxicity|"
-    r"ecology|ecosystem|biodiversity|evolution|"
-    r"photosynthesis|respiration|metabol|ATP|"
-    r"amino\s*acid|nucleotide|lipid|carbohydrate|"
-    r"biofilm|culture|medium|agar|petri|"
-    r"hypothesis|experiment|lab|laboratory|"
-    r"communicate|communication|interact|mechanism|"
-    r"division|mitosis|meiosis|differentiat"
-    r")\b",
-    re.IGNORECASE,
-)
-
-_SCOPE_MESSAGE = (
-    "I'm Nexus, a Biotechnology research assistant. "
-    "I can help with Biology, Chemistry, Physics, and Math "
-    "questions related to the Biotechnology field.\n\n"
-    "Your question doesn't appear to be in my area of expertise. "
-    "Could you rephrase it as a science or biotech question?"
-)
-
-
-def _is_in_scope(query: str) -> bool:
-    """Return True if the query is relevant to biotechnology / life sciences."""
-    return bool(_BIOTECH_KEYWORDS.search(query))
-
 
 # ---------------------------------------------------------------------------
 # Application factory
@@ -535,22 +487,6 @@ async def _process_query(
 ) -> None:
     """Run a query through the pipeline and send results back."""
     loop = asyncio.get_event_loop()
-
-    # Fast scope check — reject clearly off-topic questions immediately
-    # instead of spending 5+ minutes on live PubMed fetch.
-    if not _is_in_scope(query):
-        avatar.transition(AvatarState.SPEAKING)
-        await send_avatar_state()
-        await send_json({
-            "type": "response",
-            "answer": _SCOPE_MESSAGE,
-            "sources": [],
-            "mode": "scope",
-            "session_turns": memory.turn_count,
-        })
-        avatar.transition(AvatarState.IDLE)
-        await send_avatar_state()
-        return
 
     try:
         pipeline = get_pipeline()
