@@ -496,6 +496,60 @@ html, body {
     display: block;
 }
 
+/* ---- "Did You Mean?" correction banner ---- */
+
+.correction-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    border-radius: 8px;
+    background: rgba(234, 179, 8, 0.08);
+    border: 1px solid rgba(234, 179, 8, 0.25);
+    border-left: 3px solid var(--inference-yellow);
+    animation: msg-in 0.2s ease-out;
+    flex-wrap: wrap;
+}
+
+.correction-text {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-primary);
+    min-width: 180px;
+}
+
+.correction-text strong {
+    color: var(--inference-yellow);
+}
+
+.btn.correction-yes {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.4);
+    color: var(--evidence-green);
+    font-weight: 600;
+    padding: 8px 20px;
+    font-size: 13px;
+}
+
+.btn.correction-yes:hover {
+    background: rgba(34, 197, 94, 0.25);
+    border-color: var(--evidence-green);
+}
+
+.btn.correction-edit {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: var(--speculation-red);
+    font-weight: 600;
+    padding: 8px 20px;
+    font-size: 13px;
+}
+
+.btn.correction-edit:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: var(--speculation-red);
+}
+
 /* ---- Selects ---- */
 
 .mode-select {

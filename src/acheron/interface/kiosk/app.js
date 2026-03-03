@@ -50,6 +50,11 @@ let streamingDiv = null;
 let streamingBody = null;
 let streamingText = "";
 
+// "Did you mean?" correction state.
+let pendingCorrectionOriginal = null; // original text awaiting user decision
+let pendingCorrectionSuggested = null; // suggested corrected text
+let pendingCorrectionMode = null; // mode for the corrected query
+
 // Emotion detection (camera)
 let cameraStream = null;
 let cameraVideo = null;
@@ -254,6 +259,18 @@ function onSpeechFinalized(text) {
         return;
     }
 
+    // --- "Did You Mean?" correction check ---------------------------------
+    // If extractVoiceMode didn't recognize a mode command, the first word
+    // might be a mishearing (e.g., "credit" instead of "query").  Check
+    // for possible corrections before sending the query.
+    if (!modeResult.modeChanged) {
+        const correction = suggestCorrection(text);
+        if (correction) {
+            showCorrectionBanner(text, correction);
+            return; // pause — wait for user to click Yes or No
+        }
+    }
+
     // Auto-send — Nexus should feel like a conversation, not a form.
     // Send mode + query in a SINGLE message to eliminate race conditions.
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -325,6 +342,277 @@ function extractVoiceMode(text) {
     }
 
     return { modeChanged: false, mode: null, query: "" };
+}
+
+// ---------------------------------------------------------------------------
+// "Did You Mean?" — spell correction for voice commands
+// ---------------------------------------------------------------------------
+
+// Common English words that naturally START a sentence or question.
+// If the first word is one of these, we assume no correction is needed.
+const _NATURAL_STARTERS = new Set([
+    "what", "whats", "what's", "how", "why", "who", "where", "when",
+    "is", "are", "do", "does", "did", "can", "could", "would", "should",
+    "will", "shall", "has", "have", "had", "was", "were",
+    "tell", "show", "explain", "describe", "list", "find", "give",
+    "compare", "calculate", "compute", "define", "search", "look",
+    "the", "a", "an", "my", "i", "we", "they", "he", "she", "it",
+    "if", "which", "that", "this", "these", "those", "some", "any",
+    "please", "help", "about", "of", "for", "in", "on", "at", "to",
+    "so", "yes", "no", "ok", "okay", "sure", "right",
+    "design", "build", "create", "make", "run", "test", "check",
+    "all", "every", "each", "most", "many", "few", "much", "more",
+    "use", "using", "get", "let", "set", "try",
+    // stop words
+    "stop", "pause", "wait", "cancel", "enough", "quiet", "never",
+    "shut", "hold",
+]);
+
+// Scientific / domain terms that should NEVER be "corrected".
+const _DOMAIN_TERMS = new Set([
+    // organisms
+    "planarian", "planaria", "schmidtea", "dugesia", "xenopus", "physarum",
+    "hydra", "zebrafish", "axolotl", "danio", "drosophila", "elegans",
+    // bioelectric
+    "bioelectricity", "bioelectric", "vmem", "membrane", "voltage",
+    "ion", "channel", "gap", "junction", "connexin", "innexin",
+    "optogenetics", "channelrhodopsin", "galvanotaxis", "depolarization",
+    "hyperpolarization", "electroporation", "electrophysiology",
+    // molecular / cellular
+    "neoblast", "blastema", "morphogen", "morphogenesis", "wnt", "notum",
+    "crispr", "cas9", "rnai", "morpholino", "ribozyme", "piwi",
+    "transcriptomics", "proteomics", "genome", "epigenetic",
+    // technical / physics
+    "gradient", "topology", "eigenvalue", "attractor", "homeostasis",
+    "regeneration", "amputation", "polarity", "anterior", "posterior",
+    "stochastic", "deterministic", "thermodynamic", "entropy",
+    // measurement
+    "confocal", "fluorescence", "microscopy", "spectroscopy",
+    "amplitude", "frequency", "wavelength", "conductance",
+    "permeability", "capacitance", "impedance", "resistance",
+]);
+
+function _levenshtein(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b[i - 1] === a[j - 1]) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j] + 1
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+/**
+ * Detect whether the user's text looks like a botched voice command.
+ *
+ * Returns `null` if no correction is needed, or an object:
+ *   { original, suggested, mode, confidence }
+ *
+ * Architecture:
+ * 1. If extractVoiceMode() already matched → no correction (caller skips us).
+ * 2. If the first word is a common English starter → no correction.
+ * 3. If the first word is a known scientific term → no correction.
+ * 4. If the first word is close (Levenshtein) to a mode command → suggest it.
+ * 5. Else if the remaining text looks like a question → suggest default "query".
+ */
+function suggestCorrection(text) {
+    const words = text.trim().split(/\s+/);
+    if (words.length < 2) return null; // single word — no correction
+
+    const first = words[0].toLowerCase();
+    const second = words.length >= 2 ? words[1].toLowerCase() : "";
+
+    // ---- Skip if first word is a natural English sentence starter ----------
+    if (_NATURAL_STARTERS.has(first)) return null;
+
+    // ---- Skip if first word is a known scientific term ---------------------
+    if (_DOMAIN_TERMS.has(first)) return null;
+
+    // ---- Check "nexus <garbled>" pattern -----------------------------------
+    if (_levenshtein(first, "nexus") <= 2 && words.length >= 3) {
+        const modeCommands = ["query", "analyze", "analyse", "discover"];
+        let bestMode = null;
+        let bestDist = Infinity;
+        for (const m of modeCommands) {
+            const d = _levenshtein(second, m);
+            if (d < bestDist) { bestDist = d; bestMode = m; }
+        }
+        if (bestMode === "analyse") bestMode = "analyze";
+
+        if (bestDist <= 3) {
+            const rest = words.slice(2).join(" ");
+            return {
+                original: text,
+                suggested: capitalizeFirst(bestMode) + " " + rest,
+                mode: bestMode,
+                confidence: 1.0 - bestDist / Math.max(second.length, bestMode.length),
+            };
+        }
+    }
+
+    // ---- Check if first word is close to a mode command --------------------
+    const modeCommands = ["query", "analyze", "analyse", "discover"];
+    let bestMode = null;
+    let bestDist = Infinity;
+    for (const m of modeCommands) {
+        const d = _levenshtein(first, m);
+        if (d < bestDist) { bestDist = d; bestMode = m; }
+    }
+    if (bestMode === "analyse") bestMode = "analyze";
+
+    if (bestDist <= 3) {
+        const rest = words.slice(1).join(" ");
+        return {
+            original: text,
+            suggested: capitalizeFirst(bestMode) + " " + rest,
+            mode: bestMode,
+            confidence: 1.0 - bestDist / Math.max(first.length, bestMode.length),
+        };
+    }
+
+    // ---- Fallback: unknown first word + remaining text is a question -------
+    // "credit what's bioelectricity" → "credit" is unknown, "what's" = question
+    const restLower = words.slice(1).join(" ").toLowerCase();
+    const questionWords = [
+        "what", "whats", "what's", "how", "why", "who",
+        "where", "when", "is", "are", "does", "can",
+    ];
+    const hasQuestion = questionWords.some(q =>
+        restLower.startsWith(q + " ") || restLower.startsWith(q + "'")
+    );
+    const hasQuestionMark = text.includes("?");
+
+    if (hasQuestion || hasQuestionMark) {
+        const rest = words.slice(1).join(" ");
+        return {
+            original: text,
+            suggested: "Query " + rest,
+            mode: "query",
+            confidence: 0.6,
+        };
+    }
+
+    // ---- Fallback 2: unknown first word + remaining includes domain terms --
+    // "credit bioelectricity" → the rest contains a scientific word
+    const restWords = words.slice(1).map(w => w.toLowerCase().replace(/[^a-z]/g, ""));
+    const hasDomainWord = restWords.some(w => _DOMAIN_TERMS.has(w));
+
+    if (hasDomainWord) {
+        const rest = words.slice(1).join(" ");
+        return {
+            original: text,
+            suggested: "Query " + rest,
+            mode: "query",
+            confidence: 0.5,
+        };
+    }
+
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// Correction UI — "Did you mean?" banner
+// ---------------------------------------------------------------------------
+
+function showCorrectionBanner(original, suggestion) {
+    pendingCorrectionOriginal = original;
+    pendingCorrectionSuggested = suggestion.suggested;
+    pendingCorrectionMode = suggestion.mode;
+
+    removeCorrectionBanner();
+
+    const banner = document.createElement("div");
+    banner.className = "correction-banner";
+    banner.id = "correction-banner";
+
+    const textSpan = document.createElement("span");
+    textSpan.className = "correction-text";
+    textSpan.innerHTML = 'Did you mean: <strong>"' +
+        escapeHtml(suggestion.suggested) + '"</strong>?';
+
+    const btnYes = document.createElement("button");
+    btnYes.className = "btn correction-yes";
+    btnYes.textContent = "Yes";
+    btnYes.addEventListener("click", () => acceptCorrection());
+
+    const btnEdit = document.createElement("button");
+    btnEdit.className = "btn correction-edit";
+    btnEdit.textContent = "No \u2013 Edit";
+    btnEdit.addEventListener("click", () => rejectCorrection());
+
+    banner.appendChild(textSpan);
+    banner.appendChild(btnYes);
+    banner.appendChild(btnEdit);
+
+    // Show original text as user message
+    appendMessage("user", original, "You");
+
+    responsePanel.appendChild(banner);
+    responsePanel.scrollTop = responsePanel.scrollHeight;
+}
+
+function removeCorrectionBanner() {
+    const existing = document.getElementById("correction-banner");
+    if (existing) existing.remove();
+}
+
+function acceptCorrection() {
+    removeCorrectionBanner();
+
+    const corrected = pendingCorrectionSuggested;
+    const mode = pendingCorrectionMode;
+
+    pendingCorrectionOriginal = null;
+    pendingCorrectionSuggested = null;
+    pendingCorrectionMode = null;
+
+    if (!corrected || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+    // Parse the corrected text through extractVoiceMode to strip mode prefix.
+    const modeResult = extractVoiceMode(corrected);
+    const query = modeResult.query || corrected;
+    const useMode = modeResult.modeChanged ? modeResult.mode : (mode || "query");
+
+    if (modeSelect) modeSelect.value = useMode;
+
+    appendMessage("system", "Using: " + corrected, "NEXUS");
+    appendThinkingIndicator();
+    setAvatarState("thinking");
+    stopAudio();
+
+    ws.send(JSON.stringify({ type: "text", query: query, mode: useMode }));
+}
+
+function rejectCorrection() {
+    removeCorrectionBanner();
+
+    const original = pendingCorrectionOriginal;
+    pendingCorrectionOriginal = null;
+    pendingCorrectionSuggested = null;
+    pendingCorrectionMode = null;
+
+    // Prefill the input box with the original text for editing.
+    if (queryInput) {
+        queryInput.value = original || "";
+        queryInput.focus();
+        // Place cursor at the beginning (where the bad word is).
+        queryInput.setSelectionRange(0, 0);
+    }
 }
 
 function isInterruptCommand(text) {
