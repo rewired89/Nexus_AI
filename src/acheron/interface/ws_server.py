@@ -45,6 +45,7 @@ import json
 import logging
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -144,6 +145,10 @@ def create_interface_app(
     memory = SessionMemory(path=session_path)
     avatar = AvatarController()
     emotion_detector = EmotionDetector()
+
+    # Dedicated thread pool for emotion processing so it never starves
+    # the main query executor (which uses the default thread pool).
+    _emotion_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="emotion")
 
     # TTS: build engines for both voice profiles.
     # Priority: Piper (local) → ElevenLabs (cloud, API key) → Edge TTS (free).
@@ -373,7 +378,7 @@ def create_interface_app(
                         asyncio.ensure_future(
                             _process_emotion_audio(
                                 emotion_detector, wav_data,
-                                send_json, loop,
+                                send_json, _emotion_executor,
                             )
                         )
 
@@ -445,12 +450,13 @@ def create_interface_app(
                 if msg_type == "video_frame":
                     # Camera frame for emotion detection — process in
                     # background so we don't block the message loop.
+                    # Throttle: _process_emotion_frame skips if already busy.
                     frame_data = data.get("data", "")
                     if frame_data:
                         asyncio.ensure_future(
                             _process_emotion_frame(
                                 emotion_detector, frame_data,
-                                send_json, loop,
+                                send_json, _emotion_executor,
                             )
                         )
                     continue
@@ -459,6 +465,14 @@ def create_interface_app(
                     query = data.get("query", "").strip()
                     if not query:
                         continue
+
+                    # Accept optional inline mode (avoids two-message race).
+                    inline_mode = data.get("mode")
+                    if inline_mode and inline_mode in (
+                        "analyze", "discover", "query",
+                    ):
+                        query_mode = inline_mode
+                        explicit_mode = data.get("explicit_mode")
 
                     # Check for stop commands from text input too.
                     if is_interrupt_command(query):
@@ -528,15 +542,26 @@ async def _process_emotion_frame(
     detector: EmotionDetector,
     base64_data: str,
     send_json,  # type: ignore[type-arg]
-    loop: asyncio.AbstractEventLoop,
+    executor: ThreadPoolExecutor,
 ) -> None:
-    """Decode a base64 JPEG frame and run facial emotion analysis."""
+    """Decode a base64 JPEG frame and run facial emotion analysis.
+
+    Uses a dedicated single-thread executor so it can never starve the
+    default pool (which handles LLM queries).  A module-level throttle
+    flag prevents frames from piling up.
+    """
+    # Import nonlocal throttle flag from the enclosing create_interface_app.
+    # We don't have direct access, so we use the detector as a flag carrier.
+    if getattr(detector, "_frame_in_flight", False):
+        return
+    detector._frame_in_flight = True  # type: ignore[attr-defined]
     try:
         import base64
         frame_bytes = base64.b64decode(base64_data)
 
+        loop = asyncio.get_event_loop()
         reading = await loop.run_in_executor(
-            None, detector.process_video_frame, frame_bytes,
+            executor, detector.process_video_frame, frame_bytes,
         )
         if reading:
             state = detector.current_state
@@ -546,18 +571,21 @@ async def _process_emotion_frame(
             })
     except Exception:
         logger.debug("Emotion frame processing failed", exc_info=True)
+    finally:
+        detector._frame_in_flight = False  # type: ignore[attr-defined]
 
 
 async def _process_emotion_audio(
     detector: EmotionDetector,
     audio_bytes: bytes,
     send_json,  # type: ignore[type-arg]
-    loop: asyncio.AbstractEventLoop,
+    executor: ThreadPoolExecutor,
 ) -> None:
     """Run voice emotion analysis on a WAV audio segment."""
     try:
+        loop = asyncio.get_event_loop()
         reading = await loop.run_in_executor(
-            None, detector.process_audio, audio_bytes,
+            executor, detector.process_audio, audio_bytes,
         )
         if reading:
             state = detector.current_state

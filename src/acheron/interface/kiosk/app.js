@@ -229,10 +229,9 @@ function onSpeechFinalized(text) {
     //   "Nexus discover ...", "Discover ...", "Discover that"
     const modeResult = extractVoiceMode(text);
     if (modeResult.modeChanged) {
-        // Switch the mode dropdown + notify server.
+        // Update the dropdown visually.
         if (modeSelect) {
             modeSelect.value = modeResult.mode;
-            onModeChange();
         }
     }
 
@@ -248,17 +247,27 @@ function onSpeechFinalized(text) {
             "NEXUS"
         );
         setAvatarState("idle");
+        // Still notify server of mode change.
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "mode", mode: modeResult.mode }));
+        }
         return;
     }
 
     // Auto-send — Nexus should feel like a conversation, not a form.
+    // Send mode + query in a SINGLE message to eliminate race conditions.
     if (ws && ws.readyState === WebSocket.OPEN) {
         stopAudio();
         appendMessage("user", query, "You");
         appendThinkingIndicator();
         setAvatarState("thinking");
-        ws.send(JSON.stringify({ type: "text", query: query }));
-        // Also update the input box so the user can see what was sent.
+
+        const payload = { type: "text", query: query };
+        // Include mode inline so server gets it atomically.
+        if (modeResult.modeChanged) {
+            payload.mode = modeResult.mode;
+        }
+        ws.send(JSON.stringify(payload));
         if (queryInput) queryInput.value = "";
     }
 }
@@ -273,6 +282,7 @@ function extractVoiceMode(text) {
         { words: ["nexus discover"],                 mode: "discover" },
         { words: ["discover"],                       mode: "discover" },
         { words: ["nexus query"],                    mode: "query" },
+        { words: ["query"],                          mode: "query" },
     ];
 
     for (const m of modes) {
@@ -641,7 +651,6 @@ function sendTextQuery() {
     if (modeResult.modeChanged) {
         if (modeSelect) {
             modeSelect.value = modeResult.mode;
-            onModeChange();
         }
         if (modeResult.query) {
             query = modeResult.query;
@@ -653,6 +662,9 @@ function sendTextQuery() {
                 "NEXUS"
             );
             queryInput.value = "";
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "mode", mode: modeResult.mode }));
+            }
             return;
         }
     }
@@ -661,7 +673,12 @@ function sendTextQuery() {
     appendThinkingIndicator();
     setAvatarState("thinking");
 
-    ws.send(JSON.stringify({ type: "text", query: query }));
+    // Send mode + query in a single message.
+    const payload = { type: "text", query: query };
+    if (modeResult.modeChanged) {
+        payload.mode = modeResult.mode;
+    }
+    ws.send(JSON.stringify(payload));
     queryInput.value = "";
 }
 
