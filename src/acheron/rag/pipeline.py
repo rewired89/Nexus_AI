@@ -1302,6 +1302,7 @@ class RAGPipeline:
         question: str,
         mode: Optional[str] = None,
         messages: list[dict] | None = None,
+        emotional_context: str = "",
     ) -> Generator[str | object, None, None]:
         """Streaming query with ReAct agent for intelligent evidence gathering.
 
@@ -1313,6 +1314,13 @@ class RAGPipeline:
 
         Falls back to :meth:`analyze_stream` on any agent failure so
         the user always gets a response.
+
+        Parameters
+        ----------
+        emotional_context:
+            Natural-language description of the user's detected emotional
+            state (from the emotion detector).  Appended to the system
+            prompt so the LLM can adapt its tone.
 
         Yields ``str`` chunks during response generation, then a final
         ``HypothesisEngineResult`` with metadata.
@@ -1408,6 +1416,15 @@ class RAGPipeline:
 
         # Build the mode-specific prompt (identical to analyze_stream).
         system_prompt = get_mode_prompt(detected_mode)
+
+        # Inject emotional awareness into the system prompt.
+        if emotional_context:
+            system_prompt = (
+                system_prompt
+                + "\n\n[User Emotional State]\n"
+                + emotional_context
+            )
+
         query_template = get_mode_query_template(
             detected_mode, query=question,
         )

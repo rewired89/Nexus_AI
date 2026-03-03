@@ -50,10 +50,20 @@ let streamingDiv = null;
 let streamingBody = null;
 let streamingText = "";
 
+// Emotion detection (camera)
+let cameraStream = null;
+let cameraVideo = null;
+let emotionCanvas = null;
+let emotionCtx = null;
+let emotionTimer = null;
+let cameraActive = false;
+let currentEmotion = null; // latest EmotionalState from server
+const EMOTION_CAPTURE_MS = 500; // capture a frame every 500ms (2 FPS)
+
 // DOM references (set in DOMContentLoaded)
 let responsePanel, queryInput, micBtn, sendBtn, modeSelect, voiceSelect;
 let statusDot, statusText, avatarCanvas, avatarLabel, avatarGlow;
-let listeningIndicator, interimDisplay;
+let listeningIndicator, interimDisplay, cameraBtn, emotionBadge;
 
 // ---------------------------------------------------------------------------
 // Browser SpeechRecognition setup
@@ -425,6 +435,10 @@ function handleMessage(msg) {
             updateAvatar(msg);
             break;
 
+        case "emotion":
+            updateEmotionDisplay(msg.state);
+            break;
+
         case "error":
             removeThinkingIndicator();
             appendMessage("error", msg.message, "Error");
@@ -773,6 +787,137 @@ function animateAvatar() {
 }
 
 // ---------------------------------------------------------------------------
+// Camera — emotion detection via server-side face analysis
+// ---------------------------------------------------------------------------
+
+function startCamera() {
+    if (cameraActive) return;
+
+    cameraVideo = document.getElementById("emotion-video");
+    if (!cameraVideo) return;
+
+    // Off-screen canvas for frame capture.
+    emotionCanvas = document.createElement("canvas");
+    emotionCanvas.width = 320;
+    emotionCanvas.height = 240;
+    emotionCtx = emotionCanvas.getContext("2d");
+
+    navigator.mediaDevices.getUserMedia({
+        video: { width: 320, height: 240, facingMode: "user" },
+        audio: false,
+    }).then((stream) => {
+        cameraStream = stream;
+        cameraVideo.srcObject = stream;
+        cameraVideo.play();
+        cameraActive = true;
+        cameraVideo.classList.add("active");
+
+        if (cameraBtn) {
+            cameraBtn.classList.add("active");
+            cameraBtn.title = "Camera active (click to disable)";
+        }
+
+        // Start periodic frame capture.
+        emotionTimer = setInterval(captureAndSendFrame, EMOTION_CAPTURE_MS);
+        console.log("Camera started for emotion detection");
+    }).catch((err) => {
+        console.warn("Camera not available:", err.message);
+        if (cameraBtn) {
+            cameraBtn.title = "Camera unavailable: " + err.message;
+        }
+    });
+}
+
+function stopCamera() {
+    cameraActive = false;
+
+    if (emotionTimer) {
+        clearInterval(emotionTimer);
+        emotionTimer = null;
+    }
+    if (cameraStream) {
+        cameraStream.getTracks().forEach((t) => t.stop());
+        cameraStream = null;
+    }
+    if (cameraVideo) {
+        cameraVideo.srcObject = null;
+        cameraVideo.classList.remove("active");
+    }
+    if (cameraBtn) {
+        cameraBtn.classList.remove("active");
+        cameraBtn.title = "Enable camera for emotion detection";
+    }
+}
+
+function toggleCamera() {
+    if (cameraActive) {
+        stopCamera();
+    } else {
+        startCamera();
+    }
+}
+
+function captureAndSendFrame() {
+    if (!cameraVideo || !cameraStream || !ws || ws.readyState !== WebSocket.OPEN) return;
+    if (cameraVideo.readyState < 2) return; // video not ready
+
+    emotionCtx.drawImage(cameraVideo, 0, 0, 320, 240);
+    const dataUrl = emotionCanvas.toDataURL("image/jpeg", 0.5);
+    const base64 = dataUrl.split(",")[1];
+
+    ws.send(JSON.stringify({
+        type: "video_frame",
+        data: base64,
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// Emotion display — show detected emotion near avatar
+// ---------------------------------------------------------------------------
+
+function updateEmotionDisplay(state) {
+    currentEmotion = state;
+    if (!emotionBadge) return;
+
+    if (!state || state.confidence < 0.3) {
+        emotionBadge.textContent = "";
+        emotionBadge.className = "emotion-badge";
+        return;
+    }
+
+    const emoji = _emotionEmoji(state.emotion);
+    emotionBadge.textContent = emoji + " " + state.emotion;
+    emotionBadge.className = "emotion-badge visible";
+
+    // Colour the badge by valence.
+    if (state.valence > 0.2) {
+        emotionBadge.style.borderColor = "var(--evidence-green)";
+        emotionBadge.style.color = "var(--evidence-green)";
+    } else if (state.valence < -0.3) {
+        emotionBadge.style.borderColor = "var(--speculation-red)";
+        emotionBadge.style.color = "var(--speculation-red)";
+    } else {
+        emotionBadge.style.borderColor = "var(--accent-cyan)";
+        emotionBadge.style.color = "var(--accent-cyan)";
+    }
+}
+
+function _emotionEmoji(emotion) {
+    const map = {
+        happy: "\u{1F60A}",
+        sad: "\u{1F614}",
+        angry: "\u{1F620}",
+        fearful: "\u{1F628}",
+        disgusted: "\u{1F616}",
+        surprised: "\u{1F632}",
+        confused: "\u{1F914}",
+        frustrated: "\u{1F624}",
+        neutral: "\u{1F610}",
+    };
+    return map[emotion] || "\u{1F610}";
+}
+
+// ---------------------------------------------------------------------------
 // Mode & voice switching
 // ---------------------------------------------------------------------------
 
@@ -809,6 +954,11 @@ document.addEventListener("DOMContentLoaded", () => {
     avatarGlow = document.getElementById("avatar-glow");
     listeningIndicator = document.getElementById("listening-indicator");
     interimDisplay = document.getElementById("interim-transcript");
+    cameraBtn = document.getElementById("camera-btn");
+    emotionBadge = document.getElementById("emotion-badge");
+
+    // Camera button.
+    if (cameraBtn) cameraBtn.addEventListener("click", toggleCamera);
 
     // Check browser support for voice INPUT (mic).
     if (!SpeechRecognition) {

@@ -59,6 +59,7 @@ from acheron.interface.avatar.renderer import (
     AvatarState,
     LipSyncTimeline,
 )
+from acheron.interface.emotion.detector import EmotionDetector
 from acheron.interface.nexus import SessionMemory
 from acheron.interface.voice.stt import WhisperSTT
 from acheron.interface.voice.tts import (
@@ -142,6 +143,7 @@ def create_interface_app(
         )
     memory = SessionMemory(path=session_path)
     avatar = AvatarController()
+    emotion_detector = EmotionDetector()
 
     # TTS: build engines for both voice profiles.
     # Priority: Piper (local) → ElevenLabs (cloud, API key) → Edge TTS (free).
@@ -366,6 +368,15 @@ def create_interface_app(
                         await signal_listening()
                         continue
 
+                    # Also run voice emotion analysis on the audio.
+                    if emotion_detector.voice_available:
+                        asyncio.ensure_future(
+                            _process_emotion_audio(
+                                emotion_detector, wav_data,
+                                send_json, loop,
+                            )
+                        )
+
                     # Process as a real query.
                     interrupted.clear()
                     processing.set()
@@ -375,6 +386,7 @@ def create_interface_app(
                             ws, text, query_mode, explicit_mode,
                             get_pipeline, memory, avatar, tts_engine,
                             send_json, send_avatar_state, interrupted,
+                            emotion_detector,
                         )
                     finally:
                         processing.clear()
@@ -430,6 +442,19 @@ def create_interface_app(
                     await send_avatar_state()
                     continue
 
+                if msg_type == "video_frame":
+                    # Camera frame for emotion detection — process in
+                    # background so we don't block the message loop.
+                    frame_data = data.get("data", "")
+                    if frame_data:
+                        asyncio.ensure_future(
+                            _process_emotion_frame(
+                                emotion_detector, frame_data,
+                                send_json, loop,
+                            )
+                        )
+                    continue
+
                 if msg_type == "text":
                     query = data.get("query", "").strip()
                     if not query:
@@ -456,6 +481,7 @@ def create_interface_app(
                             ws, query, query_mode, explicit_mode,
                             get_pipeline, memory, avatar, tts_engine,
                             send_json, send_avatar_state, interrupted,
+                            emotion_detector,
                         )
                     finally:
                         processing.clear()
@@ -498,6 +524,51 @@ def _iter_stream_in_thread(generator):
     return chunks, metadata
 
 
+async def _process_emotion_frame(
+    detector: EmotionDetector,
+    base64_data: str,
+    send_json,  # type: ignore[type-arg]
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    """Decode a base64 JPEG frame and run facial emotion analysis."""
+    try:
+        import base64
+        frame_bytes = base64.b64decode(base64_data)
+
+        reading = await loop.run_in_executor(
+            None, detector.process_video_frame, frame_bytes,
+        )
+        if reading:
+            state = detector.current_state
+            await send_json({
+                "type": "emotion",
+                "state": state.to_dict(),
+            })
+    except Exception:
+        logger.debug("Emotion frame processing failed", exc_info=True)
+
+
+async def _process_emotion_audio(
+    detector: EmotionDetector,
+    audio_bytes: bytes,
+    send_json,  # type: ignore[type-arg]
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    """Run voice emotion analysis on a WAV audio segment."""
+    try:
+        reading = await loop.run_in_executor(
+            None, detector.process_audio, audio_bytes,
+        )
+        if reading:
+            state = detector.current_state
+            await send_json({
+                "type": "emotion",
+                "state": state.to_dict(),
+            })
+    except Exception:
+        logger.debug("Emotion audio processing failed", exc_info=True)
+
+
 async def _process_query(
     ws: WebSocket,
     query: str,
@@ -510,6 +581,7 @@ async def _process_query(
     send_json,  # type: ignore[type-arg]
     send_avatar_state,  # type: ignore[type-arg]
     interrupted: asyncio.Event,
+    emotion_detector: Optional[EmotionDetector] = None,
 ) -> None:
     """Run a query through the pipeline, streaming results back.
 
@@ -517,6 +589,10 @@ async def _process_query(
     the user sees the response being "typed".  TTS is synthesised in
     sentence-sized chunks and audio frames are sent progressively —
     Nexus starts speaking within ~1-2 s of the first sentence.
+
+    If an :class:`EmotionDetector` is provided and has readings, the
+    current emotional state is injected into the pipeline so the LLM
+    can adapt its tone and style to the user's mood.
     """
     loop = asyncio.get_event_loop()
 
@@ -531,6 +607,15 @@ async def _process_query(
 
         if interrupted.is_set():
             return
+
+        # -----------------------------------------------------------
+        # Emotional context — inject user mood into the pipeline.
+        # -----------------------------------------------------------
+        emotional_context = ""
+        if emotion_detector and emotion_detector.available:
+            emotional_context = (
+                emotion_detector.current_state.to_prompt_context()
+            )
 
         # -----------------------------------------------------------
         # Kick off the streaming pipeline in a thread.
@@ -572,6 +657,7 @@ async def _process_query(
                 # if the agent encounters any errors.
                 gen = pipeline.agent_stream(
                     query, mode=explicit_mode, messages=messages,
+                    emotional_context=emotional_context,
                 )
                 text_chunks, metadata = await asyncio.wait_for(
                     loop.run_in_executor(
