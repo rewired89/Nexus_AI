@@ -654,6 +654,7 @@ async def _process_query(
             if query_mode == "discover":
                 # discover() doesn't have a streaming variant yet — use
                 # the batch path and fall back to non-streaming.
+                await send_json({"type": "response_chunk", "text": ""})
                 result = await asyncio.wait_for(
                     loop.run_in_executor(
                         None, lambda: pipeline.discover(query)
@@ -683,6 +684,10 @@ async def _process_query(
                 # Use the ReAct agent for intelligent evidence
                 # gathering.  Falls back to analyze_stream internally
                 # if the agent encounters any errors.
+                await send_json({
+                    "type": "status",
+                    "message": "Gathering evidence...",
+                })
                 gen = pipeline.agent_stream(
                     query, mode=explicit_mode, messages=messages,
                     emotional_context=emotional_context,

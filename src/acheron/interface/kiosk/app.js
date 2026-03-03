@@ -264,9 +264,9 @@ function onSpeechFinalized(text) {
 
         const payload = { type: "text", query: query };
         // Include mode inline so server gets it atomically.
-        if (modeResult.modeChanged) {
-            payload.mode = modeResult.mode;
-        }
+        // Voice input defaults to "query" mode (fast, single LLM call)
+        // unless the user explicitly said a different mode.
+        payload.mode = modeResult.modeChanged ? modeResult.mode : "query";
         ws.send(JSON.stringify(payload));
         if (queryInput) queryInput.value = "";
     }
@@ -275,34 +275,52 @@ function onSpeechFinalized(text) {
 function extractVoiceMode(text) {
     const lower = text.toLowerCase().trim();
 
-    // Patterns:  "nexus analyze ...", "analyze ...", "analyze that/this"
-    const modes = [
-        { words: ["nexus analyze", "nexus analyse"], mode: "analyze" },
-        { words: ["analyze", "analyse"],             mode: "analyze" },
-        { words: ["nexus discover"],                 mode: "discover" },
-        { words: ["discover"],                       mode: "discover" },
-        { words: ["nexus query"],                    mode: "query" },
-        { words: ["query"],                          mode: "query" },
+    // --- Fuzzy prefix matching for voice commands --------------------------
+    // The browser SpeechRecognition API frequently mishears command words.
+    // For example "Nexus query" → "nexus quarry", "nexus curry", etc.
+    // We match against known misheard variants to stay robust.
+
+    // Each entry: regex that matches at the START of the transcript,
+    // capturing the rest as group 1.
+    const modePatterns = [
+        // Analyze / Analyse
+        { rx: /^nexus\s+analy[sz]e\s*(.*)/i,      mode: "analyze" },
+        { rx: /^nexus\s+anal[iy][sz][ei]?\s*(.*)/i, mode: "analyze" },
+        { rx: /^analy[sz]e\s*(.*)/i,               mode: "analyze" },
+
+        // Discover
+        { rx: /^nexus\s+discover[y]?\s*(.*)/i,     mode: "discover" },
+        { rx: /^discover[y]?\s*(.*)/i,             mode: "discover" },
+
+        // Query — most commonly misheard word.
+        // "query" → "quarry", "curry", "querying", "carry", "quiry",
+        // "curie", "quirey", "squirting" (yes, really).
+        { rx: /^nexus\s+(?:quer[iy](?:ing)?|quarr?[iy]|curr[iy]|carr[iy]|curie|kweri|squirt(?:ing)?)\s*(.*)/i, mode: "query" },
+        { rx: /^(?:quer[iy](?:ing)?|quarr?[iy]|curr[iy]|carr[iy]|curie|kweri)\s*(.*)/i, mode: "query" },
     ];
 
-    for (const m of modes) {
-        for (const prefix of m.words) {
-            if (lower.startsWith(prefix)) {
-                let rest = text.slice(prefix.length).trim();
+    for (const p of modePatterns) {
+        const match = lower.match(p.rx);
+        if (match) {
+            let rest = match[1].trim();
 
-                // "Analyze that" / "Analyze this" = mode switch only.
-                const restLower = rest.toLowerCase();
-                if (restLower === "that" || restLower === "this" ||
-                    restLower === "it" || restLower === "mode" ||
-                    restLower === "") {
-                    return { modeChanged: true, mode: m.mode, query: "" };
-                }
+            // Use the original text (preserving case) after the matched prefix.
+            // The regex match tells us how many chars to skip.
+            const matchedLen = text.length - rest.length;
+            rest = text.slice(matchedLen).trim();
 
-                // Strip leading filler: "Analyze, what is ..." → "what is ..."
-                rest = rest.replace(/^[,.:;]\s*/, "");
-
-                return { modeChanged: true, mode: m.mode, query: capitalizeFirst(rest) };
+            // "Analyze that" / "Analyze this" = mode switch only.
+            const restLower = rest.toLowerCase();
+            if (restLower === "that" || restLower === "this" ||
+                restLower === "it" || restLower === "mode" ||
+                restLower === "") {
+                return { modeChanged: true, mode: p.mode, query: "" };
             }
+
+            // Strip leading filler: "Analyze, what is ..." → "what is ..."
+            rest = rest.replace(/^[,.:;]\s*/, "");
+
+            return { modeChanged: true, mode: p.mode, query: capitalizeFirst(rest) };
         }
     }
 
@@ -438,9 +456,7 @@ function connect() {
 function handleMessage(msg) {
     switch (msg.type) {
         case "status":
-            if (!micActive) {
-                setStatus("active", msg.message);
-            }
+            setStatus("active", msg.message);
             break;
 
         case "listening":
