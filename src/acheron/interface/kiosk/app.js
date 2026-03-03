@@ -223,16 +223,80 @@ function onSpeechFinalized(text) {
         return;
     }
 
-    // Place text in input box for editing instead of sending immediately.
-    // User can fix misheard words, then press Enter or Send.
-    if (queryInput) {
-        queryInput.value = text;
-        queryInput.focus();
-        // Select all so user can easily retype if totally wrong.
-        queryInput.select();
-        setStatus("active", "Review your question — press Enter to send, or edit first");
-        setAvatarState("idle");
+    // Check for voice mode commands:
+    //   "Nexus analyze ...", "Analyze ...", "Analyze that"
+    //   "Nexus query ...",   "Query ...",   "Query that"
+    //   "Nexus discover ...", "Discover ...", "Discover that"
+    const modeResult = extractVoiceMode(text);
+    if (modeResult.modeChanged) {
+        // Switch the mode dropdown + notify server.
+        if (modeSelect) {
+            modeSelect.value = modeResult.mode;
+            onModeChange();
+        }
     }
+
+    // Use the query (with mode prefix stripped) or the original text.
+    const query = modeResult.query || text;
+
+    // If the voice command was just a mode switch with no query
+    // (e.g., "Nexus analyze" by itself), confirm and return.
+    if (modeResult.modeChanged && !modeResult.query) {
+        appendMessage("user", text, "You");
+        appendMessage("system",
+            "Switched to " + modeResult.mode + " mode.",
+            "NEXUS"
+        );
+        setAvatarState("idle");
+        return;
+    }
+
+    // Auto-send — Nexus should feel like a conversation, not a form.
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        stopAudio();
+        appendMessage("user", query, "You");
+        appendThinkingIndicator();
+        setAvatarState("thinking");
+        ws.send(JSON.stringify({ type: "text", query: query }));
+        // Also update the input box so the user can see what was sent.
+        if (queryInput) queryInput.value = "";
+    }
+}
+
+function extractVoiceMode(text) {
+    const lower = text.toLowerCase().trim();
+
+    // Patterns:  "nexus analyze ...", "analyze ...", "analyze that/this"
+    const modes = [
+        { words: ["nexus analyze", "nexus analyse"], mode: "analyze" },
+        { words: ["analyze", "analyse"],             mode: "analyze" },
+        { words: ["nexus discover"],                 mode: "discover" },
+        { words: ["discover"],                       mode: "discover" },
+        { words: ["nexus query"],                    mode: "query" },
+    ];
+
+    for (const m of modes) {
+        for (const prefix of m.words) {
+            if (lower.startsWith(prefix)) {
+                let rest = text.slice(prefix.length).trim();
+
+                // "Analyze that" / "Analyze this" = mode switch only.
+                const restLower = rest.toLowerCase();
+                if (restLower === "that" || restLower === "this" ||
+                    restLower === "it" || restLower === "mode" ||
+                    restLower === "") {
+                    return { modeChanged: true, mode: m.mode, query: "" };
+                }
+
+                // Strip leading filler: "Analyze, what is ..." → "what is ..."
+                rest = rest.replace(/^[,.:;]\s*/, "");
+
+                return { modeChanged: true, mode: m.mode, query: capitalizeFirst(rest) };
+            }
+        }
+    }
+
+    return { modeChanged: false, mode: null, query: "" };
 }
 
 function isInterruptCommand(text) {
@@ -326,8 +390,11 @@ function connect() {
 
     ws.onopen = () => {
         setStatus("active", "Connected");
-        // Re-enable mic on reconnect if user had it on.
-        if (micEnabledByUser && !micActive) {
+        // Auto-activate mic — Nexus should be ready to listen
+        // the moment you open the page (like talking to a person).
+        // On reconnect, re-enable if it was on.
+        if (!micActive) {
+            micEnabledByUser = true;
             startMic();
         }
     };
@@ -567,7 +634,29 @@ function sendTextQuery() {
     // Stop any audio from the previous response before sending a new query.
     stopAudio();
 
-    const query = capitalizeFirst(raw);
+    let query = capitalizeFirst(raw);
+
+    // Check for mode commands in typed input too.
+    const modeResult = extractVoiceMode(query);
+    if (modeResult.modeChanged) {
+        if (modeSelect) {
+            modeSelect.value = modeResult.mode;
+            onModeChange();
+        }
+        if (modeResult.query) {
+            query = modeResult.query;
+        } else {
+            // Just a mode switch, no query.
+            appendMessage("user", raw, "You");
+            appendMessage("system",
+                "Switched to " + modeResult.mode + " mode.",
+                "NEXUS"
+            );
+            queryInput.value = "";
+            return;
+        }
+    }
+
     appendMessage("user", query, "You");
     appendThinkingIndicator();
     setAvatarState("thinking");
